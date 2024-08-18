@@ -27,6 +27,7 @@ import java.nio.file.LinkOption;
 import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.sql.Array;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -479,6 +480,19 @@ public class AutoYaraCluster
     }
 
     /**
+     * This method uses simple data types to perform the same function as buildCandidateSet (intended for python interfacing)
+     */
+    public List<SigCandidate> pythonBuildCandidateSet(List<Path> targets, int gram_size,
+        File ben_blooms_dir, File mal_blooms_dir,
+        long max_filter_size, int toKeep, boolean silent, double fp_rate) throws IOException
+    {
+        Map<Integer, CountingBloom> ben_blooms = collectBloomFilters(benign_bloom_dir);
+        Map<Integer, CountingBloom> mal_blooms = collectBloomFilters(malicious_bloom_dir);
+
+        return buildCandidateSet(targets, gram_size, ben_blooms, mal_blooms, max_filter_size, toKeep, silent, fp_rate);
+    }
+
+    /**
      * 
      * @param header A string to add to the begining of the comment for the results
      * @param evalDirs the list of directories to perform evaluations on
@@ -732,6 +746,10 @@ public class AutoYaraCluster
 
         }
         return yara;
+    }
+
+    static public YaraRuleContainerConjunctive pythonBuildRule(List<SigCandidate> finalCandidates, List<Path> targets, Set<Integer> rows_covered, final String name, SpectralCoClustering.InputNormalization normalization, int gram_size, Set<Integer> alreadyFailedOn) {
+        return buildRule(finalCandidates, targets, rows_covered, name, normalization, gram_size, alreadyFailedOn);
     }
     
     private static void getCoClusteringH(SimpleDataSet sigDataset, List<List<Integer>> rows, List<List<Integer>> cols)
