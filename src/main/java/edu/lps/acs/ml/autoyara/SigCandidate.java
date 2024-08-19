@@ -181,4 +181,15 @@ public class SigCandidate
         }
         return 8*entropy;
     }
+
+    public String getSignature() {
+        String outString = "SigCandidate";
+        for(int i = 0; i < this.signature.size(); i++)
+        {
+            int index = this.signature.getUnsigned(i);
+            outString += " " + index;
+        }
+
+        return outString;
+    }
 }
