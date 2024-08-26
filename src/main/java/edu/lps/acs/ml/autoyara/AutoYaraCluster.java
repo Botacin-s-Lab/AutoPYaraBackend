@@ -68,85 +68,83 @@ import me.tongfei.progressbar.ProgressBar;
  *
  * @author edraff
  */
-public class AutoYaraCluster
-{
-    
-    @Parameter(names={"--false-pos-benign", "-fpb"}, description = "The maximum false-positive rate among other benign files to consider using a given signature")
+public class AutoYaraCluster {
+
+    @Parameter(names = {"--false-pos-benign", "-fpb"}, description = "The maximum false-positive rate among other benign files to consider using a given signature")
     public double false_pos_b = 0.001;
-    
-    @Parameter(names={"--false-pos-malicious", "-fpm"}, description = "The maximum false-positive rate among other malicious files to consider using a given signature")
+
+    @Parameter(names = {"--false-pos-malicious", "-fpm"}, description = "The maximum false-positive rate among other malicious files to consider using a given signature")
     public double false_pos_m = 0.001;
-    
-    @Parameter(names={"--min-support-ratio", "-msr"}, description = "The minimum fraction of input files that must be covered by an n-gram for the n-gram to be considered as a potential signature")
+
+    @Parameter(names = {"--min-support-ratio", "-msr"}, description = "The minimum fraction of input files that must be covered by an n-gram for the n-gram to be considered as a potential signature")
     public double support_ratio = 0.5;
-    
-    @Parameter(names={"--min-entropy", "-me"}, description = "The minimum entropy level required of an n-gram to be considered")
+
+    @Parameter(names = {"--min-entropy", "-me"}, description = "The minimum entropy level required of an n-gram to be considered")
     public double min_entropy = 1.0;
-    
-    @Parameter(names={"--max-filter-size", "-mfs"}, description = "Maximum filter size to use in signature creation. Larger values may improve rule quality, but increase RAM usage")
+
+    @Parameter(names = {"--max-filter-size", "-mfs"}, description = "Maximum filter size to use in signature creation. Larger values may improve rule quality, but increase RAM usage")
     public int max_filter_size = 214748383;//default value is a prime that will use ~1 GB of RAM
-    
-    @Parameter(names={"--min-support-count", "-msc"}, description = "The minimum number of files that a potential signature must catch to be considered for inclusion in the larger rule.")
+
+    @Parameter(names = {"--min-support-count", "-msc"}, description = "The minimum number of files that a potential signature must catch to be considered for inclusion in the larger rule.")
     public int support_count = 2;
-    
+
     /**
      * How many different rules do we want that cover the same input files?
      */
-    @Parameter(names="--target-coverage", description = "During rule construction, how many sub-rules do you want to hit on each example? Larger values lead to larger rules.")
+    @Parameter(names = "--target-coverage", description = "During rule construction, how many sub-rules do you want to hit on each example? Larger values lead to larger rules.")
     public int ways_covered = 1;
-    
-    
-    @Parameter(names={"--to-keep", "-k"}, description="The number of n-gram candidates to create at every step of the process")
+
+
+    @Parameter(names = {"--to-keep", "-k"}, description = "The number of n-gram candidates to create at every step of the process")
     public int toKeep = 100000;
-    
-    @Parameter(names={"--benign", "-b"}, converter = FileConverter.class, description="Directory of bloom filters for benign files")
+
+    @Parameter(names = {"--benign", "-b"}, converter = FileConverter.class, description = "Directory of bloom filters for benign files")
     public File benign_bloom_dir = new File("benign-bytes");
-    
-    @Parameter(names={"--malicious", "-m"}, converter = FileConverter.class, description="Directory of bloom filters for Malicious Files")
+
+    @Parameter(names = {"--malicious", "-m"}, converter = FileConverter.class, description = "Directory of bloom filters for Malicious Files")
     public File malicious_bloom_dir = new File("malicious-bytes");
-        
-    @Parameter(names={"--fp-dirs", "-fpds"}, converter = FileConverter.class, required=false, 
-        variableArity = true,
-        description="Directories of files to check against for false positivesas part of evaluation. These will not be used to alter the rule generated.")
+
+    @Parameter(names = {"--fp-dirs", "-fpds"}, converter = FileConverter.class, required = false,
+            variableArity = true,
+            description = "Directories of files to check against for false positivesas part of evaluation. These will not be used to alter the rule generated.")
     public List<File> fpEvalDirs = new ArrayList<>();
-    
-    @Parameter(names={"--tp-dirs", "-tpds"}, converter = FileConverter.class, required=false, 
-        variableArity = true,
-        description="Directories of files to check against for true positives as part of evaluation. These will not be used to alter the rule generated.")
+
+    @Parameter(names = {"--tp-dirs", "-tpds"}, converter = FileConverter.class, required = false,
+            variableArity = true,
+            description = "Directories of files to check against for true positives as part of evaluation. These will not be used to alter the rule generated.")
     public List<File> tpEvalDirs = new ArrayList<>();
-    
-    @Parameter(names={"--input-dir", "-i"}, converter = FileConverter.class, required=true, 
-        variableArity = true,
-        description="Directory of files to n-gram")
+
+    @Parameter(names = {"--input-dir", "-i"}, converter = FileConverter.class, required = true,
+            variableArity = true,
+            description = "Directory of files to n-gram")
     public List<File> inDir;
-    
+
     @Parameter(names = "--save-all-rules",
-        description = "If true, all yara rules created will be saved, rather "
-                + "than just the best-found rule. This may be useful if the "
-                + "selection heuristics do not actually select the best rule, or"
-                + " you wish to do more testing / investigation. ")
+            description = "If true, all yara rules created will be saved, rather "
+                    + "than just the best-found rule. This may be useful if the "
+                    + "selection heuristics do not actually select the best rule, or"
+                    + " you wish to do more testing / investigation. ")
     public boolean save_all_rules = false;
-    
+
     @Parameter(names = "--help", help = true)
     public boolean help = false;
-    
+
     @Parameter(names = "--silent")
     public boolean silent = false;
-    
+
     @Parameter(names = "--print-rules", description = "If true, print out the yara-rules onto the command line.")
     public boolean print_rules = false;
-    
-    @Parameter(names={"--out", "-o"}, converter = FileConverter.class, 
-        description="Output file/directory. If only one rule is to be created, "
-                + "and output is a directory, the name will be infered from the "
-                + "first input file. If multiple rule options are to be saved, "
-                + "the first directory in the given path will be used. Multiple "
-                + "rules will be saved with a pre-fix of the rule size type. By "
-                + "default, rules are writen out to the current directory. ")
+
+    @Parameter(names = {"--out", "-o"}, converter = FileConverter.class,
+            description = "Output file/directory. If only one rule is to be created, "
+                    + "and output is a directory, the name will be infered from the "
+                    + "first input file. If multiple rule options are to be saved, "
+                    + "the first directory in the given path will be used. Multiple "
+                    + "rules will be saved with a pre-fix of the rule size type. By "
+                    + "default, rules are writen out to the current directory. ")
     public File out_file = null;
-    
-    public static void main(String... args) throws IOException
-    {
+
+    public static void main(String... args) throws IOException {
         System.out.println("AutoYara version " + Version.pomVersion + ", compile date: " + Version.buildTime);
         AutoYaraCluster main = new AutoYaraCluster();
 
@@ -155,175 +153,154 @@ public class AutoYaraCluster
                 .build();
         try {
             optionParser.parse(args);
-        } catch(ParameterException ex) {
+        } catch (ParameterException ex) {
             optionParser.usage();
             return;
         }
-        
-        if(main.help)
-        {
+
+        if (main.help) {
             optionParser.usage();
             return;
         }
 
         main.run();
     }
-    
-    public static int log2( int bits )
-    {
-        if( bits == 0 )
-            return 0; 
+
+    public static int log2(int bits) {
+        if (bits == 0)
+            return 0;
         return 31 - Integer.numberOfLeadingZeros(bits);
     }
-    
-    public void run() throws IOException
-    {
-        if(out_file == null)
+
+    public void run() throws IOException {
+        if (out_file == null)
             out_file = new File(inDir.get(0).getName() + ".yara");
         final String name = out_file.getName().replace(".yara", "");
         final File out_dir;
-        if(out_file.isDirectory())
-        {
+        if (out_file.isDirectory()) {
             out_dir = out_file;
             out_file = new File(out_dir, name);
-        }
-        else
+        } else
             out_dir = out_file.getParentFile();
-        
+
         //sort from high to low
         SortedSet<Integer> bloomSizes = new ConcurrentSkipListSet<>((a, b) -> a.compareTo(b));
         collectBloomSizes(bloomSizes, benign_bloom_dir, malicious_bloom_dir);
-        
+
         Map<Integer, CountingBloom> ben_blooms = collectBloomFilters(benign_bloom_dir);
         Map<Integer, CountingBloom> mal_blooms = collectBloomFilters(malicious_bloom_dir);
-        
+
         /////////////////////////
         //we now have our filters
         ////////////////////////
 
         List<Path> targets = getAllChildrenFiles(inDir);
-        
-        
         /**
          * A n-gram must occur in at least this many files to be a candidate for selection
          */
-        
+
         /////////////
         //, lets find some potential yara rules!
         /////////////
-        
+
         final Collection<YaraRuleContainerConjunctive> best_rule = new ArrayList();
         final AtomicDouble best_rule_coverage = new AtomicDouble(0);
         /**
-         * Whether or not we meet the goal of having at least 5 terms/features 
+         * Whether or not we meet the goal of having at least 5 terms/features
          * in conjunctions
          */
         final AtomicBoolean meets_min_desired_coverage = new AtomicBoolean(false);
         final AtomicInteger best_rule_gram_size = new AtomicInteger(0);
-        
+
         final Map<Set<Integer>, SigCandidate> multi_gram_working_set = new HashMap<>();
-        
-        bloomSizes.stream().forEach(gram_size->
+
+        // NHAT TODO: Break up code block into multiple components
+        bloomSizes.stream().forEach(gram_size ->
         {
 
-            if(best_rule_coverage.get() >= 1.0 && meets_min_desired_coverage.get())
+            if (best_rule_coverage.get() >= 1.0 && meets_min_desired_coverage.get())
                 return;//STOP, you can't get any better
-            
-            List<SigCandidate> finalCandidates = buildCandidateSet(targets, gram_size, ben_blooms, mal_blooms, 
-                                       max_filter_size, toKeep, silent, Math.max(false_pos_b, false_pos_m));
-            
-            Set<Integer> alreadyFrailedOn = new HashSet<>();
-            for(SpectralCoClustering.InputNormalization norm : SpectralCoClustering.InputNormalization.values())
-            {
+
+            List<SigCandidate> finalCandidates = buildCandidateSet(targets, gram_size, ben_blooms, mal_blooms,
+                    max_filter_size, toKeep, silent, Math.max(false_pos_b, false_pos_m));
+
+            Set<Integer> alreadyFailedOn = new HashSet<>();
+
+            for (SpectralCoClustering.InputNormalization norm : SpectralCoClustering.InputNormalization.values()) {
                 Set<Integer> rows_covered = new HashSet<>();
-                
-                YaraRuleContainerConjunctive yara= buildRule(finalCandidates, targets, rows_covered, name, norm,
-                                                            gram_size, alreadyFrailedOn);
+
+                YaraRuleContainerConjunctive yara = buildRule(finalCandidates, targets, rows_covered, name, norm,
+                        gram_size, alreadyFailedOn);
 
                 double fp_rate = fpEvalDirs.isEmpty() ? 0 : addMatchEval("False Positives:", fpEvalDirs, yara);
                 double tp_rate = tpEvalDirs.isEmpty() ? 0 : addMatchEval("True Positives:", tpEvalDirs, yara);
                 double input_tp_rate = addMatchEval("Input TP Rate:", inDir, yara);
 
-                if(print_rules)
-                {
+                if (print_rules) {
                     System.out.println(yara);
-    //                System.out.println("Selected " + toUse.size() + " grams to cover " + this_coverage);
+                    //                System.out.println("Selected " + toUse.size() + " grams to cover " + this_coverage);
                 }
 
-                if(save_all_rules)
-                {                
-                    try(BufferedWriter bw = new BufferedWriter(new FileWriter(new File(out_dir, name + "_" + gram_size  + "_" + norm.name() + ".yara"))))
-                    {
+                if (save_all_rules) {
+                    try (BufferedWriter bw = new BufferedWriter(new FileWriter(new File(out_dir, name + "_" + gram_size + "_" + norm.name() + ".yara")))) {
                         bw.write(yara.toString());
-                    }
-                    catch (IOException ex)
-                    {
+                    } catch (IOException ex) {
                         Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
                     }
                 }
-		
-                int log_diff_gram_size = log2(gram_size)-log2(best_rule_gram_size.get());
+
+                int log_diff_gram_size = log2(gram_size) - log2(best_rule_gram_size.get());
                 boolean this_rule_strong = yara.minConjunctionSize() >= 5;
-                double penalty = Math.min(yara.minConjunctionSize()/5.0, 1);
-                
-                if(input_tp_rate*penalty > best_rule_coverage.get() + log_diff_gram_size/100.0)//give a slight favor to smaller rules!
+                double penalty = Math.min(yara.minConjunctionSize() / 5.0, 1);
+
+                if (input_tp_rate * penalty > best_rule_coverage.get() + log_diff_gram_size / 100.0)//give a slight favor to smaller rules!
                 {
                     best_rule.clear();
                     best_rule.add(yara);
 
-                    best_rule_coverage.set(input_tp_rate*penalty);
+                    best_rule_coverage.set(input_tp_rate * penalty);
                     best_rule_gram_size.set(gram_size);
                     meets_min_desired_coverage.set(this_rule_strong);
                 }
             }
         });
-        
-        if(best_rule.isEmpty())
-        {
+
+        if (best_rule.isEmpty()) {
             System.out.println("Could not create yara-rule that matched constraints :(");
             return;
         }
-        
-        if(!silent)
+
+        if (!silent)
             System.out.println("Saving rule to " + out_file.getAbsolutePath());
-        try(BufferedWriter bw = new BufferedWriter(new FileWriter(out_file)))
-        {
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(out_file))) {
             YaraRuleContainerConjunctive yara = best_rule.stream().findFirst().get();
             bw.write(yara.toString());
         }
-        
-        
-    }
-    
-    static public List<Path> getAllChildrenFiles(Path... sourceDirs)
-    {
-        return getAllChildrenFiles(Arrays.asList(sourceDirs).stream().map(f->f.toFile()).collect(Collectors.toList()));
     }
 
-    static public List<Path> getAllChildrenFiles(File... sourceDirs)
-    {
+    static public List<Path> getAllChildrenFiles(Path... sourceDirs) {
+        return getAllChildrenFiles(Arrays.asList(sourceDirs).stream().map(f -> f.toFile()).collect(Collectors.toList()));
+    }
+
+    static public List<Path> getAllChildrenFiles(File... sourceDirs) {
         return getAllChildrenFiles(Arrays.asList(sourceDirs));
     }
-    
-    static public List<Path> getAllChildrenFiles(List<File> sourceDirs)
-    {
 
-        
-        List<Path> targets = sourceDirs.stream().flatMap(f->
+    static public List<Path> getAllChildrenFiles(List<File> sourceDirs) {
+
+
+        List<Path> targets = sourceDirs.stream().flatMap(f ->
         {
-            try
-            {
+            try {
                 return Files.walk(f.toPath(), FileVisitOption.FOLLOW_LINKS).filter(Files::isRegularFile);
-            }
-            catch (IOException ex)
-            {
+            } catch (IOException ex) {
                 Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
                 return new ArrayList<Path>().stream();
             }
         }).collect(Collectors.toList());
         return targets;
     }
-    
+
     /**
      * This method does the work to create a final list of n-gram candidates to be used in the rule creation process
      * @param targets the list of files to create a rule that matches
@@ -332,60 +309,50 @@ public class AutoYaraCluster
      * @param mal_blooms the set of known malicious bloom filters
      * @return a set of signature candidate objects
      */
-    public static List<SigCandidate> buildCandidateSet(List<Path> targets, int gram_size, 
-        Map<Integer, CountingBloom> ben_blooms, Map<Integer, CountingBloom> mal_blooms,
-        long max_filter_size, int toKeep, boolean silent, double fp_rate)
-    {
-        long totalbytes = targets.stream().mapToLong(p->
+    public static List<SigCandidate> buildCandidateSet(List<Path> targets, int gram_size,
+                                                       Map<Integer, CountingBloom> ben_blooms, Map<Integer, CountingBloom> mal_blooms,
+                                                       long max_filter_size, int toKeep, boolean silent, double fp_rate) {
+        long totalbytes = targets.stream().mapToLong(p ->
         {
-            try
-            {
+            try {
                 return Files.size(p);
-            }
-            catch (IOException ex)
-            {
+            } catch (IOException ex) {
                 Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
                 return 0L;
             }
         }).sum();
-        
+
         NGramGeneric ngram = new NGramGeneric();
         ngram.setAlphabetSize(256);
-        long filter_size = Math.min(totalbytes/4, max_filter_size);
+        long filter_size = Math.min(totalbytes / 4, max_filter_size);
         ngram.setFilterSize((int) filter_size);
         ngram.setGramSize(gram_size);
         ngram.setTooKeep(toKeep);
 
         ngram.init();
 
-        wrap(targets.parallelStream(), "Finding candidate " + gram_size  +"-byte sequences", silent)
-            .forEach(p->
-            {
-                try(InputStream in = new BufferedInputStream(GZIPHelper.getStream(Files.newInputStream(p))))
+        wrap(targets.parallelStream(), "Finding candidate " + gram_size + "-byte sequences", silent)
+                .forEach(p ->
                 {
-                    ngram.hashCount(in);
-                }
-                catch (IOException | InterruptedException ex)
-                {
-                    Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            });
+                    try (InputStream in = new BufferedInputStream(GZIPHelper.getStream(Files.newInputStream(p)))) {
+                        ngram.hashCount(in);
+                    } catch (IOException | InterruptedException ex) {
+                        Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
+                    }
+                });
 
 
         ngram.finishHashCount();
 
-        wrap(targets.parallelStream(), "Finding final " + gram_size  +"-byte sequences", silent)
-            .forEach(p->
-            {
-                try(InputStream in = new BufferedInputStream(GZIPHelper.getStream(Files.newInputStream(p))))
+        wrap(targets.parallelStream(), "Finding final " + gram_size + "-byte sequences", silent)
+                .forEach(p ->
                 {
-                    ngram.exactCount(in);
-                }
-                catch (IOException ex)
-                {
-                    Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            });
+                    try (InputStream in = new BufferedInputStream(GZIPHelper.getStream(Files.newInputStream(p)))) {
+                        ngram.exactCount(in);
+                    } catch (IOException ex) {
+                        Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
+                    }
+                });
 
         Map<AlphabetGram, AtomicInteger> final_candidates = ngram.finishExactCount();
         System.out.println("# candidates after exact count: " + final_candidates.size());
@@ -395,17 +362,17 @@ public class AutoYaraCluster
         CountingBloom ben_bloom = ben_blooms.get(gram_size);
         CountingBloom mal_bloom = mal_blooms.get(gram_size);
         //your FP rates are too high! Remove them!
-        final_candidates.entrySet().removeIf(e->
+        final_candidates.entrySet().removeIf(e ->
         {
-            AlphabetGram candidate =  e.getKey();
-            
+            AlphabetGram candidate = e.getKey();
+
             int num_00_ff = 0;
-            for(int i = 0; i < candidate.size(); i++)
-                if(candidate.get(i) == 0x00 || candidate.get(i) == 0xFF)
+            for (int i = 0; i < candidate.size(); i++)
+                if (candidate.get(i) == 0x00 || candidate.get(i) == 0xFF)
                     num_00_ff++;
-            if(num_00_ff > candidate.size()/2)
+            if (num_00_ff > candidate.size() / 2)
                 return true;
-            
+
             double ben_fp = ben_bloom.get(candidate) / (double) ben_bloom.divisor;
             double mal_fp = mal_bloom.get(candidate) / (double) mal_bloom.divisor;
             return ben_fp > fp_rate || mal_fp > fp_rate;
@@ -417,29 +384,26 @@ public class AutoYaraCluster
         //so lets figure that out 
 
         Map<AlphabetGram, Set<Integer>> files_occred_in = new HashMap<>();
-        final_candidates.keySet().forEach(k->files_occred_in.put(k, new ConcurrentSkipListSet()));
+        final_candidates.keySet().forEach(k -> files_occred_in.put(k, new ConcurrentSkipListSet()));
 
         AtomicInteger simpleID = new AtomicInteger();
-        wrap(targets.parallelStream(), "Determining co-occurance of " + gram_size  +"-byte sequences", silent)
-            .forEach(p->
-            {
-                try(InputStream in = new BufferedInputStream(GZIPHelper.getStream(Files.newInputStream(p))))
+        wrap(targets.parallelStream(), "Determining co-occurance of " + gram_size + "-byte sequences", silent)
+                .forEach(p ->
                 {
-                    ngram.incrementConuts(in, simpleID.getAndIncrement(), files_occred_in);
-                }
-                catch (IOException ex)
-                {
-                    Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            });
+                    try (InputStream in = new BufferedInputStream(GZIPHelper.getStream(Files.newInputStream(p)))) {
+                        ngram.incrementConuts(in, simpleID.getAndIncrement(), files_occred_in);
+                    } catch (IOException ex) {
+                        Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
+                    }
+                });
 
 
         Map<SigCandidate, Set<Integer>> cur_working_set = new ConcurrentHashMap<>(files_occred_in.size());
 
         //Populate current working set to try and filter down. 
-        files_occred_in.entrySet().parallelStream().forEach(e->
+        files_occred_in.entrySet().parallelStream().forEach(e ->
         {
-            AlphabetGram candidate =  e.getKey();
+            AlphabetGram candidate = e.getKey();
             double ben_fp = ben_bloom.get(candidate) / (double) ben_bloom.divisor;
             double mal_fp = mal_bloom.get(candidate) / (double) mal_bloom.divisor;
             cur_working_set.put(new SigCandidate(candidate, ben_fp, mal_fp, e.getValue()), e.getValue());
@@ -450,72 +414,55 @@ public class AutoYaraCluster
 
         List<SigCandidate> sigCandidates = Collections.EMPTY_LIST;
         sigCandidates = cur_working_set.keySet().parallelStream()
-                .filter(s->s.getEntropy()>1.0)
+                .filter(s -> s.getEntropy() > 1.0)
                 .collect(Collectors.toList());
 
         System.out.println("# candidates after entropy filter: " + sigCandidates.size());
 
-        if(sigCandidates.isEmpty())//We need to try a different n-gram size
+        if (sigCandidates.isEmpty())//We need to try a different n-gram size
             return Collections.EMPTY_LIST;
 
         //Create a final candidate list, remove signatures that have 100% correlation with others
         List<SigCandidate> finalCandidates = new ArrayList<>();
         Map<Set<Integer>, List<SigCandidate>> coverageGrouped = new ConcurrentHashMap<>();
         //done i parallel b/c hashing cost on the Set<Integer> can be a bit pricy
-        sigCandidates.parallelStream().forEach(s->
+        sigCandidates.parallelStream().forEach(s ->
         {
             //slightly odd call structure ensures we don't fall victim to any race condition
             coverageGrouped.putIfAbsent(s.coverage, new ArrayList<>());
             List<SigCandidate> storage = coverageGrouped.get(s.coverage);
-            
+
             //copute entropy now in parallel for use later
-            synchronized(storage)
-            {
+            synchronized (storage) {
                 storage.add(s);
             }
         });
-        
-        for(List<SigCandidate> group : coverageGrouped.values())
-        {
+
+        for (List<SigCandidate> group : coverageGrouped.values()) {
             //Pick gram with maximum entropy
-            if(!group.isEmpty())
+            if (!group.isEmpty())
                 finalCandidates.add(Collections.max(group, (SigCandidate arg0, SigCandidate arg1) -> Double.compare(arg0.getEntropy(), arg1.getEntropy())));
         }
         System.out.println("# final candidates: " + finalCandidates.size());
-        
+
         return finalCandidates;
     }
 
     /**
-     * This method uses simple data types to perform the same function as buildCandidateSet (intended for python interfacing)
-     */
-    public List<SigCandidate> pythonBuildCandidateSet(File in_dir, int gram_size,
-        File ben_blooms_dir, File mal_blooms_dir) throws IOException
-    {
-        List<Path> targets = getAllChildrenFiles(in_dir);
-        Map<Integer, CountingBloom> ben_blooms = collectBloomFilters(ben_blooms_dir);
-        Map<Integer, CountingBloom> mal_blooms = collectBloomFilters(mal_blooms_dir);
-
-        return buildCandidateSet(targets, gram_size, ben_blooms, mal_blooms, max_filter_size, toKeep, silent, Math.max(false_pos_b, false_pos_m));
-    }
-
-    /**
-     * 
+     *
      * @param header A string to add to the begining of the comment for the results
      * @param evalDirs the list of directories to perform evaluations on
      * @param yara the yara rule to evaluate, for which we will add comments to the Yara rule with the rules on each directory
      * @return the match rate against all files in the given directories
      */
-    public static double addMatchEval(String header, List<File> evalDirs, YaraRuleContainerConjunctive yara)
-    {
+    public static double addMatchEval(String header, List<File> evalDirs, YaraRuleContainerConjunctive yara) {
         //Lets check against false positive directories to make sure all is kosher in the world
-        if(!evalDirs.isEmpty())
-        {
+        if (!evalDirs.isEmpty()) {
             double numer = 0;
             double denom = 0;
             StringBuilder comment = new StringBuilder();
             comment.append(header).append("\n");
-            
+
             /**
              * If there are sub folders, we will add comments to delineate by 
              * folder what the hits where. If this is just a list of files, we 
@@ -523,84 +470,76 @@ public class AutoYaraCluster
              */
             boolean added_based_on_folders = false;
             List<File> looseFiles = new ArrayList<>();
-            for(File dir : evalDirs)
-            {
-                if(dir.isFile())
-                {
+            for (File dir : evalDirs) {
+                if (dir.isFile()) {
                     looseFiles.add(dir);
                     continue;
                 }
-                
-                try
-                {
+
+                try {
                     List<Path> toTest = Files.walk(dir.toPath(), FileVisitOption.FOLLOW_LINKS)
                             .filter(Files::isRegularFile).collect(Collectors.toList());
-                    for(Path p : toTest)
+                    for (Path p : toTest)
                         looseFiles.add(p.toFile());
-                    if(!toTest.isEmpty())
+                    if (!toTest.isEmpty())
                         continue;
                     comment.append(dir.getAbsoluteFile() + ":");
-                    List<Path> fps = toTest.parallelStream().filter(p->
+                    List<Path> fps = toTest.parallelStream().filter(p ->
                     {
-                        try(BufferedInputStream bis = new BufferedInputStream(GZIPHelper.getStream(Files.newInputStream(p))))
-                        {
+                        try (BufferedInputStream bis = new BufferedInputStream(GZIPHelper.getStream(Files.newInputStream(p)))) {
                             return yara.match(bis);
-                        }
-                        catch (IOException ex)
-                        {
+                        } catch (IOException ex) {
                             return false;
                         }
                     }).collect(Collectors.toList());
-                    
+
                     denom += toTest.size();
                     numer += fps.size();
                     comment.append(fps.size() + "/" + toTest.size() + "\n");
                     added_based_on_folders = true;
-                    if(!fps.isEmpty())
-                    {
+                    if (!fps.isEmpty()) {
                         //TODO, write out the files that we FPd on
                     }
-                    
-                }
-                catch (IOException ex)
-                {
+
+                } catch (IOException ex) {
                     Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
                 }
-                
+
                 yara.addComment(comment.toString());
             }
-            
+
             //The loose files now get done in one go
-            List<File> fps = looseFiles.parallelStream().filter(p->
+            List<File> fps = looseFiles.parallelStream().filter(p ->
             {
-                try(BufferedInputStream inputStream = new BufferedInputStream(GZIPHelper.getStream(Files.newInputStream(p.toPath()))))
-                {
+                try (BufferedInputStream inputStream = new BufferedInputStream(GZIPHelper.getStream(Files.newInputStream(p.toPath())))) {
                     return yara.match(inputStream);
-                }
-                catch (IOException ex)
-                {
+                } catch (IOException ex) {
                     return false;
                 }
             }).collect(Collectors.toList());
 
             denom += looseFiles.size();
             numer += fps.size();
-            if(added_based_on_folders)
+            if (added_based_on_folders)
                 comment.append("Other Files:");
             //else, its not "other", but all
             comment.append(fps.size() + "/" + looseFiles.size() + "\n");
-            if(!fps.isEmpty())
-            {
+            if (!fps.isEmpty()) {
                 //TODO, write out the files that we FPd on
             }
             yara.addComment(comment.toString());
-            
-            return numer/denom;
-        }
-        else
+
+            return numer / denom;
+        } else
             return 1.0;
     }
 
+    static public void buildRule2(final String name, int gram_size, List<SigCandidate> finalCandidates, List<Path> targets, Set<Integer> rows_covered, Set<Integer> alreadyFailedOn)
+    {
+        //return new YaraRuleContainerConjunctive();
+    }
+
+    // this is the original buildRule, it's not organized to support different clustering algorithms, use buildRule2
     static public YaraRuleContainerConjunctive buildRule(List<SigCandidate> finalCandidates, List<Path> targets, Set<Integer> rows_covered, final String name, SpectralCoClustering.InputNormalization normalization, int gram_size, Set<Integer> alreadyFailedOn)
     {
         int D = finalCandidates.size();
@@ -658,7 +597,7 @@ public class AutoYaraCluster
                 }
             }
         }
-        
+
         int max_row_size_seen = row_clusters.stream().mapToInt(r->r.size()).max().orElse(1);
         if(max_row_size_seen < min_rows)
             min_rows = max_row_size_seen;
@@ -753,10 +692,6 @@ public class AutoYaraCluster
 
         }
         return yara;
-    }
-
-    static public YaraRuleContainerConjunctive pythonBuildRule(List<SigCandidate> finalCandidates, List<Path> targets, Set<Integer> rows_covered, final String name, SpectralCoClustering.InputNormalization normalization, int gram_size, Set<Integer> alreadyFailedOn) {
-        return buildRule(finalCandidates, targets, rows_covered, name, normalization, gram_size, alreadyFailedOn);
     }
     
     private static void getCoClusteringH(SimpleDataSet sigDataset, List<List<Integer>> rows, List<List<Integer>> cols)
