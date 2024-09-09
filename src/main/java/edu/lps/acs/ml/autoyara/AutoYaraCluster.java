@@ -214,7 +214,6 @@ public class AutoYaraCluster {
 
         final Map<Set<Integer>, SigCandidate> multi_gram_working_set = new HashMap<>();
 
-        // NHAT TODO: Break up code block into multiple components
         bloomSizes.stream().forEach(gram_size ->
         {
 
@@ -534,11 +533,6 @@ public class AutoYaraCluster {
             return 1.0;
     }
 
-    static public void buildRule2(final String name, int gram_size, List<SigCandidate> finalCandidates, List<Path> targets, Set<Integer> rows_covered, Set<Integer> alreadyFailedOn)
-    {
-        //return new YaraRuleContainerConjunctive();
-    }
-
     // this is the original buildRule, it's not organized to support different clustering algorithms, use buildRule2
     static public YaraRuleContainerConjunctive buildRule(List<SigCandidate> finalCandidates, List<Path> targets, Set<Integer> rows_covered, final String name, SpectralCoClustering.InputNormalization normalization, int gram_size, Set<Integer> alreadyFailedOn)
     {
@@ -694,7 +688,7 @@ public class AutoYaraCluster {
         return yara;
     }
     
-    private static void getCoClusteringH(SimpleDataSet sigDataset, List<List<Integer>> rows, List<List<Integer>> cols)
+    protected static void getCoClusteringH(SimpleDataSet sigDataset, List<List<Integer>> rows, List<List<Integer>> cols)
     {
         int D = sigDataset.getNumFeatures();
         int[] cluster_assingments = getClustering(sigDataset);
@@ -740,7 +734,7 @@ public class AutoYaraCluster {
             }
     }
     
-    static private void getCoClustering(SimpleDataSet sigDataset, List<List<Integer>> rows, List<List<Integer>> cols, SpectralCoClustering.InputNormalization norm)
+    protected static void getCoClustering(SimpleDataSet sigDataset, List<List<Integer>> rows, List<List<Integer>> cols, SpectralCoClustering.InputNormalization norm)
     {
         SpectralCoClusteringVBMM bc = new SpectralCoClusteringVBMM();
         bc.inputNormalization = norm;
