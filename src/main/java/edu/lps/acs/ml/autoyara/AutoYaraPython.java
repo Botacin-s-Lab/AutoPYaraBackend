@@ -1,8 +1,6 @@
 package edu.lps.acs.ml.autoyara;
 
 import com.beust.jcommander.Parameter;
-import com.google.common.primitives.Bytes;
-import edu.lps.acs.ml.ngram3.utils.FileConverter;
 import jsat.SimpleDataSet;
 import jsat.classifiers.DataPoint;
 import jsat.clustering.biclustering.SpectralCoClustering;
@@ -105,7 +103,7 @@ public class AutoYaraPython extends AutoYaraCluster {
         return AutoYaraCluster.buildCandidateSet(targets, gram_size, ben_blooms, mal_blooms, this.max_filter_size, toKeep, silent, Math.max(false_pos_b, false_pos_m));
     }
 
-    protected void runBiclusterAlg(SimpleDataSet sigDataset, List<List<Integer>> rows, List<List<Integer>> cols)
+    protected void runCoclusterAlg(SimpleDataSet sigDataset, List<List<Integer>> rows, List<List<Integer>> cols)
     {
         if (this.biclusterAlg.equals("SpectralCoCluster")) {
             SpectralCoClusteringVBMM bc = new SpectralCoClusteringVBMM();
@@ -157,8 +155,8 @@ public class AutoYaraPython extends AutoYaraCluster {
         SimpleDataSet sigDataset = new SimpleDataSet(dataRep.stream().map(v->new DataPoint(v)).collect(Collectors.toList()));
         List<Set<Integer>> conjunctionSet = new ArrayList<>();
         //
-        int min_rows = 5;
-        int min_features = 5;
+        int min_rows = 5; // we need at least 5 files covered in a cluster, this will lower later if the clustering alg can't reach the req
+        int min_features = 5;  // we need at least 5 features that cover 50% of the files or more, this will be lowered later if needed
         List<List<Integer>> row_clusters = new ArrayList<>();
         List<List<Integer>> col_clusters = new ArrayList<>();
 
@@ -172,7 +170,7 @@ public class AutoYaraPython extends AutoYaraCluster {
         {
             try
             {
-                runBiclusterAlg(sigDataset, row_clusters, col_clusters);
+                runCoclusterAlg(sigDataset, row_clusters, col_clusters);
             }
             catch(Exception ex)
             {
@@ -196,7 +194,7 @@ public class AutoYaraPython extends AutoYaraCluster {
             }
         }
 
-        // stage 4: given matrix sigDataset, bicluster it
+        // stage 4: acquire max_row_size_seen, max_features_seen, min_rows, min_features, feature_counts_all
         int max_row_size_seen = row_clusters.stream().mapToInt(r->r.size()).max().orElse(1); // what was the most files a feature covered?
         if(max_row_size_seen < min_rows)
             min_rows = max_row_size_seen;
@@ -214,7 +212,7 @@ public class AutoYaraPython extends AutoYaraCluster {
                     feature_counts[iv.getIndex()]++;
             feature_counts_all.add(feature_counts);
         }
-        int max_features_seen = IntStream.range(0, row_clusters.size()).map(c-> //
+        int max_features_seen = IntStream.range(0, row_clusters.size()).map(c-> // how many features had 50% coverage or more?
         {
             int C_size = row_clusters.get(c).size();
             int[] feature_counts = feature_counts_all.get(c);
@@ -224,10 +222,11 @@ public class AutoYaraPython extends AutoYaraCluster {
         if(max_features_seen < min_features) // if we didn't mean the min, subtract an extra b/c otherwise we need the min count to hit the max rows, which is not likely
             min_features = Math.max(max_features_seen-1, 1);
 
+        // stage 5: for each good cluster, perform statistics to build the smallest conjunction set that also has good coverage
         for (int c = 0; c < row_clusters.size(); c++)
         {
             int C_size = row_clusters.get(c).size();
-            if(C_size < min_rows)
+            if(C_size < min_rows) // pick only clusters that cover a lot of files
                 continue;
             int[] feature_counts = feature_counts_all.get(c);
 
@@ -241,7 +240,6 @@ public class AutoYaraPython extends AutoYaraCluster {
                 continue;
 
             conjunctionSet.add(selected_features);
-
 
             //how many files have at least X of these features?
             List<Integer> file_occurance_counts = new ArrayList<>();
