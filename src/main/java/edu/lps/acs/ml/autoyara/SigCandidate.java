@@ -6,71 +6,17 @@
 package edu.lps.acs.ml.autoyara;
 
 import edu.lps.acs.ml.ngram3.alphabet.AlphabetGram;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import edu.lps.acs.ml.ngram3.alphabet.ByteGrams;
+import edu.lps.acs.ml.ngram3.alphabet.ShortGrams;
+
+import java.util.*;
 
 /**
  *
  * @author edraff
  */
 public class SigCandidate
-{    
-    public enum Priority
-    {
-        ENTROPY
-        {
-            @Override
-            int cmp(SigCandidate a, SigCandidate b, int[] curCoverage, int targetCover, double max_b_fp, double max_m_fp)
-            {
-                //negative b/c we are assuming higher entropy is better
-                return -Double.compare(sigEntropy(a), sigEntropy(b));
-            }
-            
-        },
-        TOTAL_FP
-        {
-            @Override
-            int cmp(SigCandidate a, SigCandidate b, int[] curCoverage, int targetCover, double max_b_fp, double max_m_fp)
-            {
-                max_b_fp = Math.max(max_b_fp, 1e-14);
-                max_m_fp = Math.max(max_m_fp, 1e-14);
-                double a_val = a.b_fp/max_b_fp + a.m_fp/max_m_fp;
-                double b_val = b.b_fp/max_b_fp + b.m_fp/max_m_fp;
-                return Double.compare(a_val, b_val);
-            }
-            
-        },
-        NEW_COVERAGE
-        {
-            @Override
-            int cmp(SigCandidate a, SigCandidate b, int[] curCoverage, int targetCover, double max_b_fp, double max_m_fp)
-            {
-                long a_val = 0;
-                long b_val = 0;
-                
-                a_val = a.coverage.stream().filter(v -> (curCoverage[v] < targetCover)).count();
-                b_val = b.coverage.stream().filter(v -> (curCoverage[v] < targetCover)).count();
-                
-                //- b/c we want larger=better
-                return -Long.compare(a_val, b_val);
-            }
-        },
-        TOTAL_COVERAGE
-        {
-            @Override
-            int cmp(SigCandidate a, SigCandidate b, int[] curCoverage, int targetCover, double max_b_fp, double max_m_fp)
-            {
-                //- b/c we want larger=better
-                return -Integer.compare(a.coverage.size(), b.coverage.size());
-            }
-        }
-        ;
-        abstract int cmp(SigCandidate a, SigCandidate b, int[] curCoverage, int targetCover, double max_b_fp, double max_m_fp);
-    }
-    
+{
     AlphabetGram signature;
     double b_fp;
     double m_fp;
@@ -96,58 +42,40 @@ public class SigCandidate
         this.m_fp = m_fp;
         this.coverage = coverage;
     }
-    
-    public static Set<SigCandidate> select(List<SigCandidate> candidates, int[] coverage, int targetCover, double max_b_fp, double max_m_fp, List<Priority> sortPriority)
-    {
-        Set<SigCandidate> selected = new HashSet<>();
-        
-        Set<SigCandidate> remainingOptions = new HashSet<>();
-        remainingOptions.addAll(candidates);
-        
-        do
-        {
-            //First, lets go through and remove anyone that has NO increase in coverage
-            remainingOptions.removeIf(s->
-            {
-                return s.coverage.stream().filter(i->coverage[i] < targetCover).count() == 0;
-            });
-            if(remainingOptions.isEmpty())
-                break;
-            
-            SigCandidate best = Collections.min(remainingOptions, (SigCandidate a, SigCandidate b) ->
-            {
-                for(Priority p : sortPriority)
-                {
-                    int cmp = p.cmp(a, b, coverage, targetCover, max_b_fp, max_m_fp);
-                    if(cmp != 0)
-                        return cmp;
-                }
-                
-                return 0;
-            });
-            
-            remainingOptions.remove(best);
-            selected.add(best);
-            
-            int coverageIncrease = 0;
-            for(int indx : best.coverage)
-                if(coverage[indx]++ < targetCover)
-                    coverageIncrease++;
-            
-            if(coverageIncrease == 0)
-                break;
-            
-            int c = targetCover;
-            for(int x : coverage)
-                c = Math.min(c, x);
-            if(c >= targetCover)//min coverage is meet, break
-                break;
+
+    public SigCandidate(Map<String, Object> dict) {
+        // called via python to convert the object back
+        List<Integer> sigList = (List<Integer>) dict.get("signature");
+        String sigType = (String) dict.get("signature_type");
+        int sigSize = ((Number) dict.get("signature_size")).intValue();
+
+        AlphabetGram signature;
+        if ("ByteGrams".equals(sigType)) {
+            signature = new ByteGrams(sigSize);
+        } else if ("ShortGrams".equals(sigType)) {
+            signature = new ShortGrams(sigSize);
+        } else {
+            throw new IllegalArgumentException("Unknown signature type: " + sigType);
         }
-        while(!remainingOptions.isEmpty());
-        
-        return selected;
+
+        for (Integer value : sigList) {
+            signature.push(value);
+        }
+
+        double b_fp = ((Number) dict.get("b_fp")).doubleValue();
+        double m_fp = ((Number) dict.get("m_fp")).doubleValue();
+        Set<Integer> coverage = new HashSet<>((List<Integer>) dict.get("coverage"));
+
+        // Call the existing constructor
+        this.signature = signature;
+        this.b_fp = b_fp;
+        this.m_fp = m_fp;
+        this.coverage = coverage;
+
+        // Set entropy separately as it's not part of the main constructor
+        this.entropy = ((Number) dict.get("entropy")).doubleValue();
     }
-    
+
     public double getEntropy()
     {
         if(entropy >= 0)
@@ -155,7 +83,7 @@ public class SigCandidate
         else
             return (entropy = sigEntropy(this));
     }
-    
+
     public static double sigEntropy(SigCandidate a)
     {
         double[] counts = new double[256];
@@ -191,5 +119,27 @@ public class SigCandidate
         }
 
         return outString;
+    }
+    public HashMap<String, Object> ToPythonDict() {
+        HashMap<String, Object> dict = new HashMap<>();
+
+        // Update entropy if it hasn't been calculated
+        if (this.entropy < 0) {
+            this.entropy = sigEntropy(this);
+        }
+
+        // Convert signature to list of strings
+        List<String> sigList = new ArrayList<>();
+        for (int i = 0; i < this.signature.size(); i++) {
+            sigList.add(String.valueOf(this.signature.getUnsigned(i)));
+        }
+
+        dict.put("signature", sigList);
+        dict.put("b_fp", this.b_fp);
+        dict.put("m_fp", this.m_fp);
+        dict.put("coverage", new ArrayList<>(this.coverage));
+        dict.put("entropy", this.entropy);
+
+        return dict;
     }
 }

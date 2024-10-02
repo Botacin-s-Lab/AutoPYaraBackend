@@ -93,14 +93,21 @@ public class AutoYaraPython extends AutoYaraCluster {
      * Scans all files in the specified directory, generates n-grams of specified size, and filter candidates out
      * in multiple stages.
      */
-    public List<SigCandidate> buildCandidateSet(File in_dir, int gram_size, File ben_blooms_dir, File mal_blooms_dir)
+    public List<HashMap<String, Object>> buildCandidateSet(File in_dir, int gram_size, File ben_blooms_dir, File mal_blooms_dir)
             throws IOException
     {
         List<Path> targets = AutoYaraCluster.getAllChildrenFiles(in_dir);
         Map<Integer, CountingBloom> ben_blooms = AutoYaraCluster.collectBloomFilters(ben_blooms_dir);
         Map<Integer, CountingBloom> mal_blooms = AutoYaraCluster.collectBloomFilters(mal_blooms_dir);
 
-        return AutoYaraCluster.buildCandidateSet(targets, gram_size, ben_blooms, mal_blooms, this.max_filter_size, toKeep, silent, Math.max(false_pos_b, false_pos_m));
+        List<SigCandidate> final_candidates = AutoYaraCluster.buildCandidateSet(targets, gram_size, ben_blooms, mal_blooms, this.max_filter_size, toKeep, silent, Math.max(false_pos_b, false_pos_m));
+        // Convert SigCandidate objects to HashMaps to be python friendly
+        List<HashMap<String, Object>> candidateDicts = new ArrayList<>();
+        for (SigCandidate candidate : final_candidates) {
+            candidateDicts.add(candidate.ToPythonDict());
+        }
+
+        return candidateDicts;
     }
 
     protected void runCoclusterAlg(SimpleDataSet sigDataset, List<List<Integer>> rows, List<List<Integer>> cols)
