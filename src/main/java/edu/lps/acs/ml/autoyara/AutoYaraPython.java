@@ -1,12 +1,11 @@
 package edu.lps.acs.ml.autoyara;
 
 import com.beust.jcommander.Parameter;
+import edu.lps.acs.ml.autoyara.clustering.*;
 import jsat.SimpleDataSet;
 import jsat.classifiers.DataPoint;
 import jsat.clustering.biclustering.SpectralCoClustering;
-import jsat.linear.IndexValue;
-import jsat.linear.SparseVector;
-import jsat.linear.Vec;
+import jsat.linear.*;
 import jsat.math.OnLineStatistics;
 import jsat.utils.IntList;
 import jsat.utils.concurrent.AtomicDouble;
@@ -57,8 +56,8 @@ public class AutoYaraPython extends AutoYaraCluster {
     @Parameter(names = "--clusterAlg", description = "Clustering algorithm to use")
     public String clusterAlg = "VBGMM";
 
-    @Parameter(names = "--biclusterAlg", description = "Biclustering algorithm to use")
-    public String biclusterAlg = "SpectralCoCluster";
+    @Parameter(names = "--biclusterPipelineAlg", description = "the biclustering pipeline to use")
+    public String biclusterPipelineAlg = "SpectralCoCluster";
 
     @Parameter(names = "--filterAlg", description = "N-Gram candidate filtering algorithm to use")
     public String filterAlg = "AutoYara";
@@ -110,19 +109,35 @@ public class AutoYaraPython extends AutoYaraCluster {
         return candidateDicts;
     }
 
-    protected void runCoclusterAlg(SimpleDataSet sigDataset, List<List<Integer>> rows, List<List<Integer>> cols)
+    protected BiclusteringOutput runCoclusterAlg(SimpleDataSet sigDataset)
     {
-        if (this.biclusterAlg.equals("SpectralCoCluster")) {
-            SpectralCoClusteringVBMM bc = new SpectralCoClusteringVBMM();
-            bc.inputNormalization = SpectralCoClustering.InputNormalization.BISTOCHASTIZATION;
-            bc.bicluster(sigDataset, true, rows, cols);
-        } else if (this.biclusterAlg.equals("SpectralCoClusterScale")) {
-            SpectralCoClusteringVBMM bc = new SpectralCoClusteringVBMM();
-            bc.inputNormalization = SpectralCoClustering.InputNormalization.SCALE;
-            bc.bicluster(sigDataset, true, rows, cols);
+        // it doesn't matter how we implement the algorithm as long as we update the rows and cols
+        ClusteringAlgorithm clusterer;
+        BiclusteringPipeline pipeline;
+        BiclusteringOutput out = new BiclusteringOutput();
+
+        if (this.clusterAlg.equals("VBGMM")) {
+            clusterer = new VBGMMClusterer();
         } else {
-            System.out.println("Bicluster algorithm " + this.biclusterAlg + " not found. Defaulting to SpectralCoClustering with Scale normalization.");
+            System.out.println("Cluster algorithm " + this.clusterAlg + " not found. Defaulting to VBGMMClusterer.");
+            clusterer = new VBGMMClusterer();
+        }
+
+        if (this.biclusterPipelineAlg.equals("SpectralCoCluster")) {
+            SpectralCoClusterPipeline bc = new SpectralCoClusterPipeline();
+            bc.inputNormalization = SpectralCoClustering.InputNormalization.BISTOCHASTIZATION;
+            out = bc.bicluster(sigDataset, clusterer);
+        } else if (this.biclusterPipelineAlg.equals("SpectralCoClusterScale")) {
+            SpectralCoClusterPipeline bc = new SpectralCoClusterPipeline();
+            bc.inputNormalization = SpectralCoClustering.InputNormalization.SCALE;
+            out = bc.bicluster(sigDataset, clusterer);
+        } else {
+            List<List<Integer>> rows = new ArrayList<>();
+            List<List<Integer>> cols = new ArrayList<>();
+            System.out.println("Bicluster algorithm " + this.biclusterPipelineAlg + " not found. Defaulting to SpectralCoClustering with Scale normalization.");
             getCoClusteringH(sigDataset, rows, cols); // backup algorithm implemented in the original autoyara code
+            out.rowAssignments = rows;
+            out.columnAssignments = cols;
         }
 //        SpectralCoClustering bc = new SpectralCoClustering();
 //        bc.setBaseClusterAlgo(new VBGMM());
@@ -134,6 +149,8 @@ public class AutoYaraPython extends AutoYaraCluster {
 //            bc.setBaseClusterAlgo(new HDBSCAN(min_pts--));
 //            bc.bicluster(sigDataset, true, rows, cols);
 //        }
+
+        return out;
     }
 
     public YaraRuleContainerConjunctive buildRule2(List<SigCandidate> finalCandidates, List<Path> targets, Set<Integer> rows_covered, int gram_size, Set<Integer> alreadyFailedOn)
@@ -177,7 +194,9 @@ public class AutoYaraPython extends AutoYaraCluster {
         {
             try
             {
-                runCoclusterAlg(sigDataset, row_clusters, col_clusters);
+                BiclusteringOutput out = runCoclusterAlg(sigDataset);
+                col_clusters.addAll(out.columnAssignments);
+                row_clusters.addAll(out.rowAssignments);
             }
             catch(Exception ex)
             {
@@ -361,7 +380,7 @@ public class AutoYaraPython extends AutoYaraCluster {
             }
 
             if (save_all_rules) {
-                try (BufferedWriter bw = new BufferedWriter(new FileWriter(new File(out_dir, name + "_" + gram_size + "_" + this.biclusterAlg + "_" + this.clusterAlg + ".yara")))) {
+                try (BufferedWriter bw = new BufferedWriter(new FileWriter(new File(out_dir, name + "_" + gram_size + "_" + this.biclusterPipelineAlg + "_" + this.clusterAlg + ".yara")))) {
                     bw.write(yara.toString());
                 } catch (IOException ex) {
                     Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
