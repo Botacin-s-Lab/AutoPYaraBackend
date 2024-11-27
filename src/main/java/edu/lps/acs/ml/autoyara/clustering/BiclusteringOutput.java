@@ -1,5 +1,6 @@
 package edu.lps.acs.ml.autoyara.clustering;
 
+import java.util.ArrayList;
 import java.util.List;
 // Standardized output form for this application
 // Standardization is needed to implement multiple selectable algorithms without spaghettification
@@ -8,4 +9,9 @@ import java.util.List;
 public class BiclusteringOutput {
     public List<List<Integer>> rowAssignments;
     public List<List<Integer>> columnAssignments;
+
+    public BiclusteringOutput() {
+        this.rowAssignments = new ArrayList<>();
+        this.columnAssignments = new ArrayList<>();
+    }
 }

@@ -114,30 +114,46 @@ public class AutoYaraPython extends AutoYaraCluster {
         // it doesn't matter how we implement the algorithm as long as we update the rows and cols
         ClusteringAlgorithm clusterer;
         BiclusteringPipeline pipeline;
-        BiclusteringOutput out = new BiclusteringOutput();
+        BiclusteringOutput out;
+
+        // assumption: roughly 30% of any dataset are malware variants
+        // hence we will have a k value of 30% of the dataset
+        // k will be used by clustering algorithms that require it as a hyperparameter
+        int k = (sigDataset.size() * 3) / 10;
+        if (k <= 1)
+            k = 1;
 
         if (this.clusterAlg.equals("VBGMM")) {
+            System.out.println("Clusterer: using VBGMM");
             clusterer = new VBGMMClusterer();
+        } else if (this.clusterAlg.equals("KMeans")) {
+            System.out.println("Clusterer: using KMeans with k " + k);
+            clusterer = new KMeansClusterer(k);
+        } else if (this.clusterAlg.equals("Random")) {
+            System.out.println("Clusterer: using Random with k " + k);
+            clusterer = new RandomClusterer(k);
         } else {
-            System.out.println("Cluster algorithm " + this.clusterAlg + " not found. Defaulting to VBGMMClusterer.");
+            System.out.println("Cluster algorithm " + this.clusterAlg + " not found. Defaulting to VBGMM clusterer.");
+            System.out.println("Clusterer: using VBGMM");
             clusterer = new VBGMMClusterer();
         }
 
         if (this.biclusterPipelineAlg.equals("SpectralCoCluster")) {
             SpectralCoClusterPipeline bc = new SpectralCoClusterPipeline();
             bc.inputNormalization = SpectralCoClustering.InputNormalization.BISTOCHASTIZATION;
+            System.out.println("Biclustering: using SpectralCoCluster with bistochastic normalization");
             out = bc.bicluster(sigDataset, clusterer);
         } else if (this.biclusterPipelineAlg.equals("SpectralCoClusterScale")) {
             SpectralCoClusterPipeline bc = new SpectralCoClusterPipeline();
             bc.inputNormalization = SpectralCoClustering.InputNormalization.SCALE;
+            System.out.println("Biclustering: using SpectralCoCluster with scale normalization");
             out = bc.bicluster(sigDataset, clusterer);
         } else {
-            List<List<Integer>> rows = new ArrayList<>();
-            List<List<Integer>> cols = new ArrayList<>();
             System.out.println("Bicluster algorithm " + this.biclusterPipelineAlg + " not found. Defaulting to SpectralCoClustering with Scale normalization.");
-            getCoClusteringH(sigDataset, rows, cols); // backup algorithm implemented in the original autoyara code
-            out.rowAssignments = rows;
-            out.columnAssignments = cols;
+
+            SpectralCoClusterPipeline bc = new SpectralCoClusterPipeline();
+            bc.inputNormalization = SpectralCoClustering.InputNormalization.SCALE;
+            out = bc.bicluster(sigDataset, clusterer);
         }
 //        SpectralCoClustering bc = new SpectralCoClustering();
 //        bc.setBaseClusterAlgo(new VBGMM());
@@ -192,15 +208,9 @@ public class AutoYaraPython extends AutoYaraCluster {
         }
         else
         {
-            try
-            {
-                BiclusteringOutput out = runCoclusterAlg(sigDataset);
-                col_clusters.addAll(out.columnAssignments);
-                row_clusters.addAll(out.rowAssignments);
-            }
-            catch(Exception ex)
-            {
-            }
+            BiclusteringOutput out = runCoclusterAlg(sigDataset);
+            col_clusters.addAll(out.columnAssignments);
+            row_clusters.addAll(out.rowAssignments);
 
             if(!alreadyFailedOn.contains(gram_size) && (row_clusters.isEmpty() || col_clusters.isEmpty()))
             {
@@ -345,14 +355,14 @@ public class AutoYaraPython extends AutoYaraCluster {
                                                       List<Path> targets) {
 
 
-        final Collection<YaraRuleContainerConjunctive> best_rule = new ArrayList();
-        final AtomicDouble best_rule_coverage = new AtomicDouble(0);
+        Collection<YaraRuleContainerConjunctive> best_rule = new ArrayList<>();
+        AtomicDouble best_rule_coverage = new AtomicDouble(0);
         /**
          * Whether or not we meet the goal of having at least 5 terms/features
          * in conjunctions
          */
-        final AtomicBoolean meets_min_desired_coverage = new AtomicBoolean(false);
-        final AtomicInteger best_rule_gram_size = new AtomicInteger(0);
+        AtomicBoolean meets_min_desired_coverage = new AtomicBoolean(false);
+        AtomicInteger best_rule_gram_size = new AtomicInteger(0);
 
         bloomSizes.stream().forEach(gram_size ->
         {
@@ -414,6 +424,11 @@ public class AutoYaraPython extends AutoYaraCluster {
         }
     }
 
+    private String getRuleString(Collection<YaraRuleContainerConjunctive> bestRule) {
+        YaraRuleContainerConjunctive yara = bestRule.stream().findFirst().get();
+        return bestRule.toString();
+    }
+
     public void run() throws IOException {
         initializeOutputFile();
         SortedSet<Integer> bloomSizes = collectBloomSizes();
@@ -429,5 +444,22 @@ public class AutoYaraPython extends AutoYaraCluster {
         }
 
         saveRule(bestRule);
+    }
+
+    public String pythonRun() throws IOException {
+        SortedSet<Integer> bloomSizes = collectBloomSizes();
+        Map<Integer, CountingBloom> ben_blooms = collectBloomFilters(benign_bloom_dir);
+        Map<Integer, CountingBloom> mal_blooms = collectBloomFilters(malicious_bloom_dir);
+        List<Path> targets = getAllChildrenFiles(inDir);
+
+        Collection<YaraRuleContainerConjunctive> bestRule = findBestRule(bloomSizes, ben_blooms, mal_blooms, targets);
+
+        if (bestRule.isEmpty()) {
+            System.out.println("Could not create yara-rule that matched constraints :(");
+            return "";
+        }
+
+        return getRuleString(bestRule);
+        // saveRule(bestRule);
     }
 }

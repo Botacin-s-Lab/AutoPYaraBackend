@@ -183,6 +183,7 @@ public class AutoYaraCluster {
         } else
             out_dir = out_file.getParentFile();
 
+        System.out.println("LEGACY ROUTE WARNING: run() called");
         //sort from high to low
         SortedSet<Integer> bloomSizes = new ConcurrentSkipListSet<>((a, b) -> a.compareTo(b));
         collectBloomSizes(bloomSizes, benign_bloom_dir, malicious_bloom_dir);
@@ -311,6 +312,9 @@ public class AutoYaraCluster {
     public static List<SigCandidate> buildCandidateSet(List<Path> targets, int gram_size,
                                                        Map<Integer, CountingBloom> ben_blooms, Map<Integer, CountingBloom> mal_blooms,
                                                        long max_filter_size, int toKeep, boolean silent, double fp_rate) {
+
+        System.out.println("LEGACY ROUTE WARNING: buildCandidateSet called");
+
         long totalbytes = targets.stream().mapToLong(p ->
         {
             try {
@@ -536,6 +540,8 @@ public class AutoYaraCluster {
     // this is the original buildRule, it's not organized to support different clustering algorithms, use buildRule2
     static public YaraRuleContainerConjunctive buildRule(List<SigCandidate> finalCandidates, List<Path> targets, Set<Integer> rows_covered, final String name, SpectralCoClustering.InputNormalization normalization, int gram_size, Set<Integer> alreadyFailedOn)
     {
+        System.out.println("LEGACY ROUTE WARNING: buildRule called");
+
         int D = finalCandidates.size();
         int N = targets.size();
         YaraRuleContainerConjunctive yara = new YaraRuleContainerConjunctive(N, name);
@@ -690,6 +696,8 @@ public class AutoYaraCluster {
     
     protected static void getCoClusteringH(SimpleDataSet sigDataset, List<List<Integer>> rows, List<List<Integer>> cols)
     {
+        System.out.println("LEGACY ROUTE WARNING: getCoClusteringH called");
+
         int D = sigDataset.getNumFeatures();
         int[] cluster_assingments = getClustering(sigDataset);
         int num_clusters = IntStream.of(cluster_assingments).max().getAsInt()+1;
@@ -736,6 +744,8 @@ public class AutoYaraCluster {
     
     protected static void getCoClustering(SimpleDataSet sigDataset, List<List<Integer>> rows, List<List<Integer>> cols, SpectralCoClustering.InputNormalization norm)
     {
+        System.out.println("LEGACY ROUTE WARNING: getCoClustering called");
+
         SpectralCoClusteringVBMM bc = new SpectralCoClusteringVBMM();
         bc.inputNormalization = norm;
         bc.bicluster(sigDataset, true, rows, cols);
