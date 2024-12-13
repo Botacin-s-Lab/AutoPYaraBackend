@@ -65,8 +65,13 @@ public class AutoYaraPython extends AutoYaraCluster {
     @Parameter(names = "--extractionAlg", description = "N-Gram extraction algorithm to use")
     public String extractionAlg = "AutoYara";
 
+    private boolean generateName = true; // will be auto set to true or false depending on if the name is provided or not
     public String name = "";
     public File out_dir;
+
+    // These parameters are optional, but are necessary for some clustering algorithms
+    public int[] predictorLabels; // required by augmented kmeans
+    public int k = 0; // required by kmeans, random, and augmented kmeans, 0 or less will automatically set it to # samples * 0.3
 
     public AutoYaraPython() {
         // we copy AutoYaraCluster + all of its parameters
@@ -116,22 +121,45 @@ public class AutoYaraPython extends AutoYaraCluster {
         BiclusteringPipeline pipeline;
         BiclusteringOutput out;
 
+        if (this.generateName) {
+            this.name += "_" + this.biclusterPipelineAlg;
+            this.name += "_" + this.clusterAlg;
+        }
+
         // assumption: roughly 30% of any dataset are malware variants
         // hence we will have a k value of 30% of the dataset
         // k will be used by clustering algorithms that require it as a hyperparameter
-        int k = (sigDataset.size() * 3) / 10;
-        if (k <= 1)
-            k = 1;
+
+        // if k is set to 0 or less, AutoYaraPython will automatically replace it
+        int selectedK = k;
+        if (selectedK <= 0)
+            selectedK = (sigDataset.size() * 3) / 10;
+
+        // this is to cover an edge case where k could still be 0 or less
+        if (selectedK <= 0)
+            selectedK = 1;
 
         if (this.clusterAlg.equals("VBGMM")) {
             System.out.println("Clusterer: using VBGMM");
             clusterer = new VBGMMClusterer();
         } else if (this.clusterAlg.equals("KMeans")) {
-            System.out.println("Clusterer: using KMeans with k " + k);
-            clusterer = new KMeansClusterer(k);
+            System.out.println("Clusterer: using KMeans with k " + selectedK);
+            clusterer = new KMeansClusterer(selectedK);
+
+            if (this.generateName)
+                this.name += "_k" + selectedK;
         } else if (this.clusterAlg.equals("Random")) {
-            System.out.println("Clusterer: using Random with k " + k);
-            clusterer = new RandomClusterer(k);
+            System.out.println("Clusterer: using Random with k " + selectedK);
+            clusterer = new RandomClusterer(selectedK);
+
+            if (this.generateName)
+                this.name += "_k" + selectedK;
+        } else if (this.clusterAlg.equals("AugmentedKMeans")) {
+            System.out.println("Clusterer: using AugmentedKMeans with k " + selectedK);
+            clusterer = new AugmentedKMeansClusterer(selectedK, this.predictorLabels);
+
+            if (this.generateName)
+                this.name += "_k" + selectedK;
         } else {
             System.out.println("Cluster algorithm " + this.clusterAlg + " not found. Defaulting to VBGMM clusterer.");
             System.out.println("Clusterer: using VBGMM");
@@ -175,7 +203,7 @@ public class AutoYaraPython extends AutoYaraCluster {
         int D = finalCandidates.size(); // number of n-gram candidates/features
         int N = targets.size(); // number of files in the corpus
 
-        YaraRuleContainerConjunctive yara = new YaraRuleContainerConjunctive(N, name); // initialize a new yara container
+        YaraRuleContainerConjunctive yara = new YaraRuleContainerConjunctive(N, this.name); // initialize a new yara container
 
         if(D == 0)//No candidates, nothing to do :(
             return yara;
@@ -426,7 +454,7 @@ public class AutoYaraPython extends AutoYaraCluster {
 
     private String getRuleString(Collection<YaraRuleContainerConjunctive> bestRule) {
         YaraRuleContainerConjunctive yara = bestRule.stream().findFirst().get();
-        return bestRule.toString();
+        return yara.toString();
     }
 
     public void run() throws IOException {
@@ -452,12 +480,21 @@ public class AutoYaraPython extends AutoYaraCluster {
         Map<Integer, CountingBloom> mal_blooms = collectBloomFilters(malicious_bloom_dir);
         List<Path> targets = getAllChildrenFiles(inDir);
 
+        if (this.name == null || this.name.trim().isEmpty()) {
+            this.generateName = true; // if this is true, the entire pipeline will append information to the rule name
+            this.name = "generated_rule";
+        } else {
+            this.generateName = false;
+        }
+
         Collection<YaraRuleContainerConjunctive> bestRule = findBestRule(bloomSizes, ben_blooms, mal_blooms, targets);
 
         if (bestRule.isEmpty()) {
             System.out.println("Could not create yara-rule that matched constraints :(");
             return "";
         }
+
+        this.name = ""; // after a rule generation, name must be wiped so it can be generated again for the next session
 
         return getRuleString(bestRule);
         // saveRule(bestRule);

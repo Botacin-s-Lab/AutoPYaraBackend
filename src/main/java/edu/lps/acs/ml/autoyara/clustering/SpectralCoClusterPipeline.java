@@ -23,6 +23,8 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
         DenseVector R = new DenseVector(A.rows());
         DenseVector C = new DenseVector(A.cols());
 
+        System.out.println("biclustering algorithm: sigDataset has # rows " + A.rows() + " and # columns " + A.cols());
+
         Matrix A_n = inputNormalization.normalize(A, R, C);
 
         //﻿2. Compute l = ceil(log2 k) singular vectors of A_n, u2, . . . u_l+1 and v2, . . . v_l+1, and form the matrix Z as in (12)
