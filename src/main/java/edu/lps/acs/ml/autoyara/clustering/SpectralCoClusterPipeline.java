@@ -16,6 +16,11 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
     public static SpectralCoClustering.InputNormalization DEFAULT = SpectralCoClustering.InputNormalization.BISTOCHASTIZATION;
     public SpectralCoClustering.InputNormalization inputNormalization = SpectralCoClustering.InputNormalization.BISTOCHASTIZATION;
 
+    public int k = 0;
+    public SpectralCoClusterPipeline(int k) {
+        this.k = k;
+    }
+
     public BiclusteringOutput bicluster(SimpleDataSet sigDataset, ClusteringAlgorithm clusterer) {
         //﻿1. Given A, form An = D_1^{−1/2} A D_2^{−1/2}
         Matrix A = sigDataset.getDataMatrix();
@@ -28,8 +33,9 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
         Matrix A_n = inputNormalization.normalize(A, R, C);
 
         //﻿2. Compute l = ceil(log2 k) singular vectors of A_n, u2, . . . u_l+1 and v2, . . . v_l+1, and form the matrix Z as in (12)
-        int k_max = Math.min(A.rows(), A.cols());
-        int l = (int) Math.ceil(Math.log(k_max)/Math.log(2.0));
+        // k was previously estimated using the heuristic below, however, this estimation is now done in a previous part of the pipeline
+        // int k_max = Math.min(A.rows(), A.cols());
+        int l = (int) Math.ceil(Math.log(k)/Math.log(2.0));
 
         //A_n has r rows and c columns. We are going to make a new data matrix Z
         //Z will have (r+c) rows, and l columns.

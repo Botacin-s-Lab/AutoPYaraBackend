@@ -29,25 +29,24 @@ import java.util.stream.IntStream;
  *
  *  ABOUT
  *      This class serves to run AutoYara given a python interface. In the future, you should NOT
- *      access any other classes when using jpype. This is to prevent uncessary coupling and to
- *      facilitate future development for CapyMOA/MOA integration.
+ *      access any other classes when using jpype. This is to prevent uncessary coupling.
  *
- *  PIPELINE (still WIP, behavior isn't implemented)
- *      "Training"
- *          - call buildBloomFiles
- *          - specify directories and other configuration parameters
- *          - bloom filters are now generated
- *          - done
+ *  EXAMPLE
+ *      Without Pipeline
+ *      > input training files
+ *      > build bloom files
+ *      > pass new files
+ *      > generate candidate, cluster, refine rules
+ *      > done
  *
- *      Yara Generation (planning, subject to change)
- *          - provide directories and parameters
- *          - generate candidates via buildCandidateSet
- *          - set of candidates is now passed back to python
- *          - in python class, read user specification for which bicluster and cluster to use
- *          - in python class, pass candidates to selected biclustering and clustering algorithms
- *          - output is a YaraRuleContainerConjunctive object
- *          - take output and pass it through the rest of the filtering code
- *          - code should then generate an output file
+ *      With Pipeline
+ *      > input files
+ *      > create byte candidates (done on java backend)
+ *      > return to python for byte candidate further processing
+ *      > python resumes the pipeline and passes in additional information
+ *      > start byte candidate clustering in java (done on java backend)
+ *      > build yara rule from clusters
+ *      > done
  */
 
 public class AutoYaraPython extends AutoYaraCluster {
@@ -72,6 +71,17 @@ public class AutoYaraPython extends AutoYaraCluster {
     // These parameters are optional, but are necessary for some clustering algorithms
     public int[] predictorLabels; // required by augmented kmeans
     public int k = 0; // required by kmeans, random, and augmented kmeans, 0 or less will automatically set it to # samples * 0.3
+
+    // We define these parameters here to make it simple to resume (some processes need to be injected w/ python code)
+    SortedSet<Integer> bloomSizes;
+    Map<Integer, CountingBloom> ben_blooms;
+    Map<Integer, CountingBloom> mal_blooms;
+    List<Path> targets;
+
+    Collection<YaraRuleContainerConjunctive> best_rule = new ArrayList<>();
+    AtomicDouble best_rule_coverage = new AtomicDouble(0);
+    AtomicBoolean meets_min_desired_coverage = new AtomicBoolean(false);
+    AtomicInteger best_rule_gram_size = new AtomicInteger(0);
 
     public AutoYaraPython() {
         // we copy AutoYaraCluster + all of its parameters
@@ -100,11 +110,11 @@ public class AutoYaraPython extends AutoYaraCluster {
     public List<HashMap<String, Object>> buildCandidateSet(File in_dir, int gram_size, File ben_blooms_dir, File mal_blooms_dir)
             throws IOException
     {
-        List<Path> targets = AutoYaraCluster.getAllChildrenFiles(in_dir);
         Map<Integer, CountingBloom> ben_blooms = AutoYaraCluster.collectBloomFilters(ben_blooms_dir);
         Map<Integer, CountingBloom> mal_blooms = AutoYaraCluster.collectBloomFilters(mal_blooms_dir);
 
         List<SigCandidate> final_candidates = AutoYaraCluster.buildCandidateSet(targets, gram_size, ben_blooms, mal_blooms, this.max_filter_size, toKeep, silent, Math.max(false_pos_b, false_pos_m));
+
         // Convert SigCandidate objects to HashMaps to be python friendly
         List<HashMap<String, Object>> candidateDicts = new ArrayList<>();
         for (SigCandidate candidate : final_candidates) {
@@ -167,19 +177,19 @@ public class AutoYaraPython extends AutoYaraCluster {
         }
 
         if (this.biclusterPipelineAlg.equals("SpectralCoCluster")) {
-            SpectralCoClusterPipeline bc = new SpectralCoClusterPipeline();
+            SpectralCoClusterPipeline bc = new SpectralCoClusterPipeline(selectedK);
             bc.inputNormalization = SpectralCoClustering.InputNormalization.BISTOCHASTIZATION;
             System.out.println("Biclustering: using SpectralCoCluster with bistochastic normalization");
             out = bc.bicluster(sigDataset, clusterer);
         } else if (this.biclusterPipelineAlg.equals("SpectralCoClusterScale")) {
-            SpectralCoClusterPipeline bc = new SpectralCoClusterPipeline();
+            SpectralCoClusterPipeline bc = new SpectralCoClusterPipeline(selectedK);
             bc.inputNormalization = SpectralCoClustering.InputNormalization.SCALE;
             System.out.println("Biclustering: using SpectralCoCluster with scale normalization");
             out = bc.bicluster(sigDataset, clusterer);
         } else {
             System.out.println("Bicluster algorithm " + this.biclusterPipelineAlg + " not found. Defaulting to SpectralCoClustering with Scale normalization.");
 
-            SpectralCoClusterPipeline bc = new SpectralCoClusterPipeline();
+            SpectralCoClusterPipeline bc = new SpectralCoClusterPipeline(selectedK);
             bc.inputNormalization = SpectralCoClustering.InputNormalization.SCALE;
             out = bc.bicluster(sigDataset, clusterer);
         }
@@ -208,7 +218,7 @@ public class AutoYaraPython extends AutoYaraCluster {
         if(D == 0)//No candidates, nothing to do :(
             return yara;
         // System.out.println("We have " +  D + " potential features");
-        // Lets build a dataset object representing the files and which signatures (features) occured in each
+        // Lets build a dataset object representing the files and which signatures (features) occured in each sample
 
         List<Vec> dataRep = new ArrayList<>();
         for(int i = 0; i < N; i++)
@@ -216,11 +226,12 @@ public class AutoYaraPython extends AutoYaraCluster {
 
         // stage 2: populate the containers with data given the features and files
         for(int d = 0; d < D; d++)
-        {
             for(int i : finalCandidates.get(d).coverage)
                 dataRep.get(i).set(d, 1.0); // populate the matrix with 1s and 0s, where 1 means feature d exists in file i
-        }
+
         SimpleDataSet sigDataset = new SimpleDataSet(dataRep.stream().map(v->new DataPoint(v)).collect(Collectors.toList()));
+        // note: sigDataset is in the same order as targets
+
         List<Set<Integer>> conjunctionSet = new ArrayList<>();
         //
         int min_rows = 5; // we need at least 5 files covered in a cluster, this will lower later if the clustering alg can't reach the req
@@ -377,20 +388,97 @@ public class AutoYaraPython extends AutoYaraCluster {
         return bloomSizes;
     }
 
+    private void findBestRulePipelineInit() throws IOException {
+        initializeOutputFile();
+
+        this.bloomSizes = collectBloomSizes();
+        this.ben_blooms = collectBloomFilters(benign_bloom_dir);
+        this.mal_blooms = collectBloomFilters(malicious_bloom_dir);
+        this.targets = AutoYaraPython.getAllChildrenFiles(inDir);
+
+        // no name specified? generate a name for the YARA rule
+        if (this.name == null || this.name.trim().isEmpty()) {
+            this.generateName = true; // if this is true, the entire pipeline will append information to the rule name
+            this.name = "generated_rule";
+        } else {
+            this.generateName = false;
+        }
+
+        this.best_rule = new ArrayList<>();
+        this.best_rule_coverage = new AtomicDouble(0);
+        /**
+         * Whether or not we meet the goal of having at least 5 terms/features
+         * in conjunctions
+         */
+        this.meets_min_desired_coverage = new AtomicBoolean(false);
+        this.best_rule_gram_size = new AtomicInteger(0);
+    }
+
+    private List<SigCandidate>  findBestRulePipelineCandidateSet(Integer gram_size) {
+        if (best_rule_coverage.get() >= 1.0 && meets_min_desired_coverage.get())
+            return new ArrayList<>(); //STOP, you can't get any better
+
+        List<SigCandidate> finalCandidates = buildCandidateSet(targets, gram_size, ben_blooms, mal_blooms,
+                max_filter_size, toKeep, silent, Math.max(false_pos_b, false_pos_m));
+
+        return finalCandidates;
+    }
+
+    private void findBestRulePipelineClustering(Integer gram_size, List<SigCandidate> finalCandidates) {
+        Set<Integer> alreadyFailedOn = new HashSet<>();
+
+        Set<Integer> rows_covered = new HashSet<>();
+
+        YaraRuleContainerConjunctive yara = buildRule2(finalCandidates, targets, rows_covered,
+                gram_size, alreadyFailedOn);
+
+        double fp_rate = fpEvalDirs.isEmpty() ? 0 : addMatchEval("False Positives:", fpEvalDirs, yara);
+        double tp_rate = tpEvalDirs.isEmpty() ? 0 : addMatchEval("True Positives:", tpEvalDirs, yara);
+        double input_tp_rate = addMatchEval("Input TP Rate:", inDir, yara);
+
+        if (print_rules) {
+            System.out.println(yara);
+            //                System.out.println("Selected " + toUse.size() + " grams to cover " + this_coverage);
+        }
+
+        if (save_all_rules) {
+            try (BufferedWriter bw = new BufferedWriter(new FileWriter(new File(out_dir, name + "_" + gram_size + "_" + this.biclusterPipelineAlg + "_" + this.clusterAlg + ".yara")))) {
+                bw.write(yara.toString());
+            } catch (IOException ex) {
+                Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+
+        int log_diff_gram_size = log2(gram_size) - log2(best_rule_gram_size.get());
+        boolean this_rule_strong = yara.minConjunctionSize() >= 5;
+        double penalty = Math.min(yara.minConjunctionSize() / 5.0, 1);
+
+        if (input_tp_rate * penalty > best_rule_coverage.get() + log_diff_gram_size / 100.0)//give a slight favor to smaller rules!
+        {
+            best_rule.clear();
+            best_rule.add(yara);
+
+            best_rule_coverage.set(input_tp_rate * penalty);
+            best_rule_gram_size.set(gram_size);
+            meets_min_desired_coverage.set(this_rule_strong);
+        }
+    }
+
+    // deprecated, please findBestRulePipelineInit, then findBestRulePipelineCandidateSet + findBestRulePipelineClustering
     private Collection<YaraRuleContainerConjunctive> findBestRule(SortedSet<Integer> bloomSizes,
                                                       Map<Integer, CountingBloom> ben_blooms,
                                                       Map<Integer, CountingBloom> mal_blooms,
                                                       List<Path> targets) {
 
 
-        Collection<YaraRuleContainerConjunctive> best_rule = new ArrayList<>();
-        AtomicDouble best_rule_coverage = new AtomicDouble(0);
+        this.best_rule = new ArrayList<>();
+        this.best_rule_coverage = new AtomicDouble(0);
         /**
          * Whether or not we meet the goal of having at least 5 terms/features
          * in conjunctions
          */
-        AtomicBoolean meets_min_desired_coverage = new AtomicBoolean(false);
-        AtomicInteger best_rule_gram_size = new AtomicInteger(0);
+        this.meets_min_desired_coverage = new AtomicBoolean(false);
+        this.best_rule_gram_size = new AtomicInteger(0);
 
         bloomSizes.stream().forEach(gram_size ->
         {
@@ -457,13 +545,12 @@ public class AutoYaraPython extends AutoYaraCluster {
         return yara.toString();
     }
 
+    // please use run() only if you want it to automatically generate a YARA file at the output directory
+    // otherwise, use pythonRun() to receive the YARA output as a string instead
     public void run() throws IOException {
-        initializeOutputFile();
-        SortedSet<Integer> bloomSizes = collectBloomSizes();
-        Map<Integer, CountingBloom> ben_blooms = collectBloomFilters(benign_bloom_dir);
-        Map<Integer, CountingBloom> mal_blooms = collectBloomFilters(malicious_bloom_dir);
-        List<Path> targets = getAllChildrenFiles(inDir);
+        findBestRulePipelineInit(); // init to read files and load them as a class field
 
+        // it is redundant to pass bloomSizes, ..., etc, but we leave it here to preserve the legacy pipeline
         Collection<YaraRuleContainerConjunctive> bestRule = findBestRule(bloomSizes, ben_blooms, mal_blooms, targets);
 
         if (bestRule.isEmpty()) {
@@ -475,18 +562,9 @@ public class AutoYaraPython extends AutoYaraCluster {
     }
 
     public String pythonRun() throws IOException {
-        SortedSet<Integer> bloomSizes = collectBloomSizes();
-        Map<Integer, CountingBloom> ben_blooms = collectBloomFilters(benign_bloom_dir);
-        Map<Integer, CountingBloom> mal_blooms = collectBloomFilters(malicious_bloom_dir);
-        List<Path> targets = getAllChildrenFiles(inDir);
+        findBestRulePipelineInit(); // init to read files and load them as a class field
 
-        if (this.name == null || this.name.trim().isEmpty()) {
-            this.generateName = true; // if this is true, the entire pipeline will append information to the rule name
-            this.name = "generated_rule";
-        } else {
-            this.generateName = false;
-        }
-
+        // it is redundant to pass bloomSizes, ..., etc, but we leave it here to preserve the legacy pipeline
         Collection<YaraRuleContainerConjunctive> bestRule = findBestRule(bloomSizes, ben_blooms, mal_blooms, targets);
 
         if (bestRule.isEmpty()) {
