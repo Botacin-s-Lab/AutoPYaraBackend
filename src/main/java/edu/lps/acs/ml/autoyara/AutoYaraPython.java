@@ -369,6 +369,14 @@ public class AutoYaraPython extends AutoYaraCluster {
         return yara;
     }
 
+    public List<String> getPathsPython() {
+        List<String> output = new ArrayList<String>();
+        for (Path p : this.targets) {
+            output.add(p.toString());
+        }
+        return output;
+    }
+
     private void initializeOutputFile() {
         if (out_file == null)
             out_file = new File(inDir.get(0).getName() + ".yara");

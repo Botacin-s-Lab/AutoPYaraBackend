@@ -315,6 +315,14 @@ public class AutoYaraCluster {
 
         System.out.println("LEGACY ROUTE WARNING: buildCandidateSet called");
 
+        // Create ordered mapping of Path -> ID upfront
+        // This is so that the .coverage IDs in each SigCandidate points to the index of targets
+        // We need targets and .coverage information to be in sync to link to predictor labels
+        Map<Path, Integer> pathToId = new HashMap<>();
+        for (int i = 0; i < targets.size(); i++) {
+            pathToId.put(targets.get(i), i);
+        }
+
         long totalbytes = targets.stream().mapToLong(p ->
         {
             try {
@@ -389,12 +397,11 @@ public class AutoYaraCluster {
         Map<AlphabetGram, Set<Integer>> files_occred_in = new HashMap<>();
         final_candidates.keySet().forEach(k -> files_occred_in.put(k, new ConcurrentSkipListSet()));
 
-        AtomicInteger simpleID = new AtomicInteger();
         wrap(targets.parallelStream(), "Determining co-occurance of " + gram_size + "-byte sequences", silent)
                 .forEach(p ->
                 {
                     try (InputStream in = new BufferedInputStream(GZIPHelper.getStream(Files.newInputStream(p)))) {
-                        ngram.incrementConuts(in, simpleID.getAndIncrement(), files_occred_in);
+                        ngram.incrementConuts(in, pathToId.get(p), files_occred_in);
                     } catch (IOException ex) {
                         Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
                     }
