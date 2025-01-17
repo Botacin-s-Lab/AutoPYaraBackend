@@ -73,12 +73,12 @@ public class AutoYaraPython extends AutoYaraCluster {
     public int k = 0; // required by kmeans, random, and augmented kmeans, 0 or less will automatically set it to # samples * 0.3
 
     // We define these parameters here to make it simple to resume (some processes need to be injected w/ python code)
-    SortedSet<Integer> bloomSizes;
+    public SortedSet<Integer> bloomSizes;
     Map<Integer, CountingBloom> ben_blooms;
     Map<Integer, CountingBloom> mal_blooms;
-    List<Path> targets;
+    public List<Path> targets;
 
-    Collection<YaraRuleContainerConjunctive> best_rule = new ArrayList<>();
+    public Collection<YaraRuleContainerConjunctive> best_rule = new ArrayList<>();
     AtomicDouble best_rule_coverage = new AtomicDouble(0);
     AtomicBoolean meets_min_desired_coverage = new AtomicBoolean(false);
     AtomicInteger best_rule_gram_size = new AtomicInteger(0);
@@ -164,7 +164,7 @@ public class AutoYaraPython extends AutoYaraCluster {
 
             if (this.generateName)
                 this.name += "_k" + selectedK;
-        } else if (this.clusterAlg.equals("AugmentedKMeans")) {
+        } else if (this.clusterAlg.equals("AugmentedKMeansDBSCAN") || this.clusterAlg.equals("AugmentedKMeansVT")) {
             System.out.println("Clusterer: using AugmentedKMeans with k " + selectedK);
             clusterer = new AugmentedKMeansClusterer(selectedK, this.predictorLabels);
 
@@ -271,6 +271,7 @@ public class AutoYaraPython extends AutoYaraCluster {
 
         // stage 4: acquire max_row_size_seen, max_features_seen, min_rows, min_features, feature_counts_all
         int max_row_size_seen = row_clusters.stream().mapToInt(r->r.size()).max().orElse(1); // what was the most files a feature covered?
+        // if the best row clusters were too small, we lower expectations
         if(max_row_size_seen < min_rows)
             min_rows = max_row_size_seen;
         List<int[]> feature_counts_all = new ArrayList<>();
@@ -287,21 +288,25 @@ public class AutoYaraPython extends AutoYaraCluster {
                     feature_counts[iv.getIndex()]++;
             feature_counts_all.add(feature_counts);
         }
-        int max_features_seen = IntStream.range(0, row_clusters.size()).map(c-> // how many features had 50% coverage or more?
+
+        // how many features within a bicluster had 50% coverage or more?
+        // of those, which cluster had the most features with 50% coverage?
+        int max_features_seen = IntStream.range(0, row_clusters.size()).map(c->
         {
             int C_size = row_clusters.get(c).size();
             int[] feature_counts = feature_counts_all.get(c);
             return (int)col_clusters.get(c).stream().filter(j->feature_counts[j] >= 0.5*C_size).count();
         }).max().orElse(1);
 
-        if(max_features_seen < min_features) // if we didn't mean the min, subtract an extra b/c otherwise we need the min count to hit the max rows, which is not likely
+        // min features is "we need X many features that cover 50%+ of the samples in this bicluster"
+        if(max_features_seen < min_features) // if the best cluster didn't hit the expectations, lower it
             min_features = Math.max(max_features_seen-1, 1);
 
         // stage 5: for each good cluster, perform statistics to build the smallest conjunction set that also has good coverage
         for (int c = 0; c < row_clusters.size(); c++)
         {
             int C_size = row_clusters.get(c).size();
-            if(C_size < min_rows) // pick only clusters that cover a lot of files
+            if(C_size < min_rows) // pick only clusters that cover a lot of files/features
                 continue;
             int[] feature_counts = feature_counts_all.get(c);
 
@@ -396,7 +401,7 @@ public class AutoYaraPython extends AutoYaraCluster {
         return bloomSizes;
     }
 
-    private void findBestRulePipelineInit() throws IOException {
+    public void findBestRulePipelineInit() throws IOException {
         initializeOutputFile();
 
         this.bloomSizes = collectBloomSizes();
@@ -422,7 +427,7 @@ public class AutoYaraPython extends AutoYaraCluster {
         this.best_rule_gram_size = new AtomicInteger(0);
     }
 
-    private List<SigCandidate>  findBestRulePipelineCandidateSet(Integer gram_size) {
+    public List<SigCandidate> findBestRulePipelineCandidateSet(Integer gram_size) {
         if (best_rule_coverage.get() >= 1.0 && meets_min_desired_coverage.get())
             return new ArrayList<>(); //STOP, you can't get any better
 
@@ -432,7 +437,7 @@ public class AutoYaraPython extends AutoYaraCluster {
         return finalCandidates;
     }
 
-    private void findBestRulePipelineClustering(Integer gram_size, List<SigCandidate> finalCandidates) {
+    public void findBestRulePipelineClustering(Integer gram_size, List<SigCandidate> finalCandidates) {
         Set<Integer> alreadyFailedOn = new HashSet<>();
 
         Set<Integer> rows_covered = new HashSet<>();
@@ -570,7 +575,8 @@ public class AutoYaraPython extends AutoYaraCluster {
     }
 
     public String pythonRun() throws IOException {
-        findBestRulePipelineInit(); // init to read files and load them as a class field
+        // we no longer use this function, python will directly call it for more granular control
+        //findBestRulePipelineInit(); // init to read files and load them as a class field
 
         // it is redundant to pass bloomSizes, ..., etc, but we leave it here to preserve the legacy pipeline
         Collection<YaraRuleContainerConjunctive> bestRule = findBestRule(bloomSizes, ben_blooms, mal_blooms, targets);

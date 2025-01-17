@@ -29,6 +29,7 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
         DenseVector C = new DenseVector(A.cols());
 
         System.out.println("biclustering algorithm: sigDataset has # rows " + A.rows() + " and # columns " + A.cols());
+        // TODO: Z transformation should also transform predictorLabels if applicable
 
         Matrix A_n = inputNormalization.normalize(A, R, C);
 
