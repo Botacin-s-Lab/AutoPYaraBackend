@@ -6,5 +6,5 @@ import jsat.SimpleDataSet;
 import java.util.List;
 
 public interface BiclusteringPipeline {
-    public BiclusteringOutput bicluster(SimpleDataSet sigDataset, ClusteringAlgorithm clusterer);
+    public BiclusteringOutput bicluster(SimpleDataSet sigDataset, ClusteringAlgorithm clusterer, int[] predictorLabels);
 }

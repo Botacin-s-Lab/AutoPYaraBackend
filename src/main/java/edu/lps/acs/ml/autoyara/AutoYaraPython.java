@@ -142,6 +142,7 @@ public class AutoYaraPython extends AutoYaraCluster {
 
         // if k is set to 0 or less, AutoYaraPython will automatically replace it
         int selectedK = k;
+
         if (selectedK <= 0)
             selectedK = (sigDataset.size() * 3) / 10;
 
@@ -166,7 +167,7 @@ public class AutoYaraPython extends AutoYaraCluster {
                 this.name += "_k" + selectedK;
         } else if (this.clusterAlg.equals("AugmentedKMeansDBSCAN") || this.clusterAlg.equals("AugmentedKMeansVT")) {
             System.out.println("Clusterer: using AugmentedKMeans with k " + selectedK);
-            clusterer = new AugmentedKMeansClusterer(selectedK, this.predictorLabels);
+            clusterer = new AugmentedKMeansClusterer(selectedK);
 
             if (this.generateName)
                 this.name += "_k" + selectedK;
@@ -180,18 +181,18 @@ public class AutoYaraPython extends AutoYaraCluster {
             SpectralCoClusterPipeline bc = new SpectralCoClusterPipeline(selectedK);
             bc.inputNormalization = SpectralCoClustering.InputNormalization.BISTOCHASTIZATION;
             System.out.println("Biclustering: using SpectralCoCluster with bistochastic normalization");
-            out = bc.bicluster(sigDataset, clusterer);
+            out = bc.bicluster(sigDataset, clusterer, this.predictorLabels);
         } else if (this.biclusterPipelineAlg.equals("SpectralCoClusterScale")) {
             SpectralCoClusterPipeline bc = new SpectralCoClusterPipeline(selectedK);
             bc.inputNormalization = SpectralCoClustering.InputNormalization.SCALE;
             System.out.println("Biclustering: using SpectralCoCluster with scale normalization");
-            out = bc.bicluster(sigDataset, clusterer);
+            out = bc.bicluster(sigDataset, clusterer, this.predictorLabels);
         } else {
             System.out.println("Bicluster algorithm " + this.biclusterPipelineAlg + " not found. Defaulting to SpectralCoClustering with Scale normalization.");
 
             SpectralCoClusterPipeline bc = new SpectralCoClusterPipeline(selectedK);
             bc.inputNormalization = SpectralCoClustering.InputNormalization.SCALE;
-            out = bc.bicluster(sigDataset, clusterer);
+            out = bc.bicluster(sigDataset, clusterer, this.predictorLabels);
         }
 //        SpectralCoClustering bc = new SpectralCoClustering();
 //        bc.setBaseClusterAlgo(new VBGMM());

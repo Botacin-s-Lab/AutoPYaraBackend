@@ -9,6 +9,9 @@ import jsat.utils.IntList;
 import java.util.List;
 
 public class ClusteringAlgorithm {
+    protected int[] predictorLabels; // this is only used by the AugmentedKmeans clusterer
+    protected int k; // number of clusters, only used by certain algorithms that require k
+
     public BiclusteringOutput cluster(SimpleDataSet sigDataset, SimpleDataSet Z) {
         throw new UnsupportedOperationException("cluster needs to be overrided by an inheriting class");
     }
@@ -107,5 +110,13 @@ public class ClusteringAlgorithm {
 
         output.rowAssignments = row_assignments;
         output.columnAssignments = col_assignments;
+    }
+
+    protected void setPredictorLabels(int[] predictorLabels) {
+        this.predictorLabels = predictorLabels;
+    }
+
+    protected void setK(int k) {
+        this.k = k;
     }
 }

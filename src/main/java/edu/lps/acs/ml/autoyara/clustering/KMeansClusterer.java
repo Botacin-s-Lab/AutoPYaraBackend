@@ -12,8 +12,6 @@ import java.util.List;
 import java.util.Random;
 
 public class KMeansClusterer extends ClusteringAlgorithm {
-    private final int k; // number of clusters
-
     public KMeansClusterer(int k) {
         this.k = k;
     }

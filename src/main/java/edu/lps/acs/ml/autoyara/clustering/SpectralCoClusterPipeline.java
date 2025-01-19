@@ -21,7 +21,7 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
         this.k = k;
     }
 
-    public BiclusteringOutput bicluster(SimpleDataSet sigDataset, ClusteringAlgorithm clusterer) {
+    public BiclusteringOutput bicluster(SimpleDataSet sigDataset, ClusteringAlgorithm clusterer, int[] predictorLabels) {
         //﻿1. Given A, form An = D_1^{−1/2} A D_2^{−1/2}
         Matrix A = sigDataset.getDataMatrix();
 
@@ -29,7 +29,6 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
         DenseVector C = new DenseVector(A.cols());
 
         System.out.println("biclustering algorithm: sigDataset has # rows " + A.rows() + " and # columns " + A.cols());
-        // TODO: Z transformation should also transform predictorLabels if applicable
 
         Matrix A_n = inputNormalization.normalize(A, R, C);
 
@@ -37,6 +36,23 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
         // k was previously estimated using the heuristic below, however, this estimation is now done in a previous part of the pipeline
         // int k_max = Math.min(A.rows(), A.cols());
         int l = (int) Math.ceil(Math.log(k)/Math.log(2.0));
+
+        // problem: predictorLabels are assigned to the original rows of the matrix only, how do we extend to the columns during Z transforamtion?
+        // for clustering algorithms that need a predictor label transformed to Z, we allow several options
+        // NewLabel: add a new cluster and assign it to all V components
+        int[] transformedPredictorLabels = new int[A.rows() + A.cols()];
+        String mode = "NewLabel";
+        if (mode.equals("NewLabel")) {
+            this.k = k + 1;
+            l = (int) Math.ceil(Math.log(this.k)/Math.log(2.0));
+
+            for (int i = 0; i < A.rows(); i++)
+                transformedPredictorLabels[i] = predictorLabels[i];
+            for (int i = 0; i < A.cols(); i++)
+                transformedPredictorLabels[i + predictorLabels.length] = this.k-1; // we use k-1 instead of k since clusters start at 0
+        }
+        clusterer.setPredictorLabels(transformedPredictorLabels);
+        clusterer.setK(this.k);
 
         //A_n has r rows and c columns. We are going to make a new data matrix Z
         //Z will have (r+c) rows, and l columns.
