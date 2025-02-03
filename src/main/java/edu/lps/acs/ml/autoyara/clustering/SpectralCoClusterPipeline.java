@@ -39,7 +39,9 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
 
         // problem: predictorLabels are assigned to the original rows of the matrix only, how do we extend to the columns during Z transforamtion?
         // for clustering algorithms that need a predictor label transformed to Z, we allow several options
-        // NewLabel: add a new cluster and assign it to all V components
+        // NewLabel: add a new cluster and assign it to all V components <- using this right now
+        // Separate: each new feature has a separate label, unimplemented
+        // NearestCluster: assign the feature to the same cluster as the samples its most commonly found in, unimplemented
         if (predictorLabels != null) {
             int[] transformedPredictorLabels = new int[A.rows() + A.cols()];
             String mode = "NewLabel";
