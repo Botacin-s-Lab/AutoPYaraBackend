@@ -10,6 +10,7 @@ import jsat.math.OnLineStatistics;
 import jsat.utils.IntList;
 import jsat.utils.concurrent.AtomicDouble;
 
+import javax.naming.Binding;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
@@ -66,7 +67,7 @@ public class AutoYaraPython extends AutoYaraCluster {
 
     private boolean generateName = true; // will be auto set to true or false depending on if the name is provided or not
     public String name = "";
-    public File out_dir;
+    public String out_dir;
 
     // These parameters are optional, but are necessary for some clustering algorithms
     public int[] predictorLabels; // required by augmented kmeans
@@ -83,11 +84,43 @@ public class AutoYaraPython extends AutoYaraCluster {
     AtomicBoolean meets_min_desired_coverage = new AtomicBoolean(false);
     AtomicInteger best_rule_gram_size = new AtomicInteger(0);
 
+    // it's wasteful to have to recompute the byte candidates on the same file directory for every clustering algorithm
+    // since it's the same every time caching skips byte extraction if the solution already exist
+    // this makes it so you can run multiple clustering algorithms on a single malware family without having to recompute
+    // the final byte candidates for each one, making evaluation fast
+    public boolean cacheByteCandidates = true;
+    private Map<Integer, List<SigCandidate>> finalCandidatesCache = new HashMap<>();
+    private List<File> cachedDir;
+
     public AutoYaraPython() {
         // we copy AutoYaraCluster + all of its parameters
-        // in future iterations we will slowly migrate dependency only to this file
+        // in future iterations we will slowly migrate dependency only to AutoYaraPython, so AutoYaraCluster will become obsolete
         super();
         myBloom = new Bytes2Bloom();
+    }
+
+    public void resetYaraState() {
+        this.generateName = true; // will be auto set to true or false depending on if the name is provided or not
+        this.name = "";
+        this.out_dir = "";
+        this.out_file = null;
+
+        this.predictorLabels = null; // required by augmented kmeans
+        this.k = 0; // required by kmeans, random, and augmented kmeans, 0 or less will automatically set it to # samples * 0.3
+
+        // We define these parameters here to make it simple to resume (some processes need to be injected w/ python code)
+        this.bloomSizes = null;
+        this.ben_blooms = null;
+        this.mal_blooms = null;
+        this.targets = null;
+
+        this.best_rule = new ArrayList<>();
+        this.best_rule_coverage = new AtomicDouble(0);
+        this.meets_min_desired_coverage = new AtomicBoolean(false);
+        this.best_rule_gram_size = new AtomicInteger(0);
+
+        if (!cacheByteCandidates)
+            finalCandidatesCache.clear();
     }
 
     /**
@@ -151,49 +184,52 @@ public class AutoYaraPython extends AutoYaraCluster {
             selectedK = 1;
 
         if (this.clusterAlg.equals("VBGMM")) {
-            System.out.println("Clusterer: using VBGMM");
+            // System.out.println("Clusterer: using VBGMM");
             clusterer = new VBGMMClusterer();
         } else if (this.clusterAlg.equals("KMeans")) {
-            System.out.println("Clusterer: using KMeans with k " + selectedK);
+            // System.out.println("Clusterer: using KMeans with k " + selectedK);
             clusterer = new KMeansClusterer(selectedK);
 
             if (this.generateName)
                 this.name += "_k" + selectedK;
         } else if (this.clusterAlg.equals("Random")) {
-            System.out.println("Clusterer: using Random with k " + selectedK);
+            // System.out.println("Clusterer: using Random with k " + selectedK);
             clusterer = new RandomClusterer(selectedK);
 
             if (this.generateName)
                 this.name += "_k" + selectedK;
         } else if (this.clusterAlg.equals("AugmentedKMeansDBSCAN") || this.clusterAlg.equals("AugmentedKMeansVT")) {
-            System.out.println("Clusterer: using AugmentedKMeans with k " + selectedK);
+            // System.out.println("Clusterer: using AugmentedKMeans with k " + selectedK);
             clusterer = new AugmentedKMeansClusterer(selectedK);
 
             if (this.generateName)
                 this.name += "_k" + selectedK;
         } else {
-            System.out.println("Cluster algorithm " + this.clusterAlg + " not found. Defaulting to VBGMM clusterer.");
-            System.out.println("Clusterer: using VBGMM");
+            // System.out.println("Cluster algorithm " + this.clusterAlg + " not found. Defaulting to VBGMM clusterer.");
+            // System.out.println("Clusterer: using VBGMM");
             clusterer = new VBGMMClusterer();
         }
 
         if (this.biclusterPipelineAlg.equals("SpectralCoCluster")) {
             SpectralCoClusterPipeline bc = new SpectralCoClusterPipeline(selectedK);
             bc.inputNormalization = SpectralCoClustering.InputNormalization.BISTOCHASTIZATION;
-            System.out.println("Biclustering: using SpectralCoCluster with bistochastic normalization");
+            // System.out.println("Biclustering: using SpectralCoCluster with bistochastic normalization");
             out = bc.bicluster(sigDataset, clusterer, this.predictorLabels);
         } else if (this.biclusterPipelineAlg.equals("SpectralCoClusterScale")) {
             SpectralCoClusterPipeline bc = new SpectralCoClusterPipeline(selectedK);
             bc.inputNormalization = SpectralCoClustering.InputNormalization.SCALE;
-            System.out.println("Biclustering: using SpectralCoCluster with scale normalization");
+            // System.out.println("Biclustering: using SpectralCoCluster with scale normalization");
             out = bc.bicluster(sigDataset, clusterer, this.predictorLabels);
         } else {
-            System.out.println("Bicluster algorithm " + this.biclusterPipelineAlg + " not found. Defaulting to SpectralCoClustering with Scale normalization.");
+            // System.out.println("Bicluster algorithm " + this.biclusterPipelineAlg + " not found. Defaulting to SpectralCoClustering with Scale normalization.");
 
             SpectralCoClusterPipeline bc = new SpectralCoClusterPipeline(selectedK);
             bc.inputNormalization = SpectralCoClustering.InputNormalization.SCALE;
             out = bc.bicluster(sigDataset, clusterer, this.predictorLabels);
         }
+
+        if (this.generateName)
+            this.generateName = false;
 //        SpectralCoClustering bc = new SpectralCoClustering();
 //        bc.setBaseClusterAlgo(new VBGMM());
 //        bc.bicluster(sigDataset, true, rows, cols);
@@ -384,16 +420,13 @@ public class AutoYaraPython extends AutoYaraCluster {
     }
 
     private void initializeOutputFile() {
-        if (out_file == null)
-            out_file = new File(inDir.get(0).getName() + ".yara");
-
-        this.name = out_file.getName().replace(".yara", "");
-
-        if (out_file.isDirectory()) {
-            this.out_dir = out_file;
-            out_file = new File(out_dir, name);
-        } else
-            this.out_dir = out_file.getParentFile();
+        // no name specified? generate a name for the YARA rule
+        if (this.name == null || this.name.trim().isEmpty()) {
+            this.generateName = true; // if this is true, the entire pipeline will append information to the rule name
+            this.name = inDir.get(0).getName();
+        } else {
+            this.generateName = false;
+        }
     }
 
     private SortedSet<Integer> collectBloomSizes() throws IOException {
@@ -409,13 +442,9 @@ public class AutoYaraPython extends AutoYaraCluster {
         this.ben_blooms = collectBloomFilters(benign_bloom_dir);
         this.mal_blooms = collectBloomFilters(malicious_bloom_dir);
         this.targets = AutoYaraPython.getAllChildrenFiles(inDir);
-
-        // no name specified? generate a name for the YARA rule
-        if (this.name == null || this.name.trim().isEmpty()) {
-            this.generateName = true; // if this is true, the entire pipeline will append information to the rule name
-            this.name = "generated_rule";
-        } else {
-            this.generateName = false;
+        if (!inDir.equals(cachedDir)) {
+            cachedDir = inDir;
+            finalCandidatesCache.clear();
         }
 
         this.best_rule = new ArrayList<>();
@@ -500,8 +529,13 @@ public class AutoYaraPython extends AutoYaraCluster {
             if (best_rule_coverage.get() >= 1.0 && meets_min_desired_coverage.get())
                 return;//STOP, you can't get any better
 
-            List<SigCandidate> finalCandidates = buildCandidateSet(targets, gram_size, ben_blooms, mal_blooms,
-                    max_filter_size, toKeep, silent, Math.max(false_pos_b, false_pos_m));
+            if (!finalCandidatesCache.containsKey(gram_size)) {
+                List<SigCandidate> finalCandidates = buildCandidateSet(targets, gram_size, ben_blooms, mal_blooms,
+                        max_filter_size, toKeep, silent, Math.max(false_pos_b, false_pos_m));
+
+                finalCandidatesCache.put(gram_size, finalCandidates);
+            }
+            List<SigCandidate> finalCandidates = finalCandidatesCache.get(gram_size);
 
             Set<Integer> alreadyFailedOn = new HashSet<>();
 
@@ -546,9 +580,12 @@ public class AutoYaraPython extends AutoYaraCluster {
     }
 
     private void saveRule(Collection<YaraRuleContainerConjunctive> bestRule) throws IOException {
-        if (!silent)
-            System.out.println("Saving rule to " + out_file.getAbsolutePath());
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(out_file))) {
+        this.out_file = new File(this.out_dir + "/" + this.name + ".yara");
+
+        if (!silent || true)
+            System.out.println("Saving rule to " + this.out_file.getAbsolutePath());
+
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(this.out_file))) {
             YaraRuleContainerConjunctive yara = bestRule.stream().findFirst().get();
             bw.write(bestRule.toString());
         }
@@ -568,28 +605,27 @@ public class AutoYaraPython extends AutoYaraCluster {
         Collection<YaraRuleContainerConjunctive> bestRule = findBestRule(bloomSizes, ben_blooms, mal_blooms, targets);
 
         if (bestRule.isEmpty()) {
-            System.out.println("Could not create yara-rule that matched constraints :(");
+            System.out.println("[GENERATION FAILED] Could not create yara-rule that matched constraints!");
             return;
         }
-
         saveRule(bestRule);
     }
 
     public String pythonRun() throws IOException {
-        // we no longer use this function, python will directly call it for more granular control
-        //findBestRulePipelineInit(); // init to read files and load them as a class field
+        // we no longer use this function from java, python will directly call it for more granular control
+        //findBestRulePipelineInit(); // init to read files and load them as a class field, disabled because python has control of it
 
         // it is redundant to pass bloomSizes, ..., etc, but we leave it here to preserve the legacy pipeline
         Collection<YaraRuleContainerConjunctive> bestRule = findBestRule(bloomSizes, ben_blooms, mal_blooms, targets);
 
         if (bestRule.isEmpty()) {
-            System.out.println("Could not create yara-rule that matched constraints :(");
+            System.out.println("[GENERATION FAILED] Could not create yara-rule that matched constraints!");
             return "";
         }
 
-        this.name = ""; // after a rule generation, name must be wiped so it can be generated again for the next session
+        System.out.println("Saving rule to " + out_dir + " | " + out_file);
+        saveRule(bestRule);
 
         return getRuleString(bestRule);
-        // saveRule(bestRule);
     }
 }

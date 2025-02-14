@@ -28,7 +28,7 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
         DenseVector R = new DenseVector(A.rows());
         DenseVector C = new DenseVector(A.cols());
 
-        System.out.println("biclustering algorithm: sigDataset has # rows " + A.rows() + " and # columns " + A.cols());
+        // System.out.println("biclustering algorithm: sigDataset has # rows " + A.rows() + " and # columns " + A.cols());
 
         Matrix A_n = inputNormalization.normalize(A, R, C);
 
@@ -60,6 +60,16 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
         //A_n has r rows and c columns. We are going to make a new data matrix Z
         //Z will have (r+c) rows, and l columns.
         SimpleDataSet Z = create_Z_dataset(A_n, l, R, C, inputNormalization);//+1 b/c we are going to skip the first SV
+
+//        System.out.println("SimpleDataSet2");
+//        Matrix Zm = Z.getDataMatrix();
+//        for (int i = 0; i < Zm.rows(); i++) {
+//            for (int j = 0; j < Zm.cols(); j++) {
+//                double value = Zm.get(i, j);
+//                System.out.print(value + ", ");
+//            }
+//            System.out.print("\n");
+//        }
 
         // cluster Z
         return clusterer.cluster(sigDataset, Z);

@@ -313,8 +313,6 @@ public class AutoYaraCluster {
                                                        Map<Integer, CountingBloom> ben_blooms, Map<Integer, CountingBloom> mal_blooms,
                                                        long max_filter_size, int toKeep, boolean silent, double fp_rate) {
 
-        System.out.println("LEGACY ROUTE WARNING: buildCandidateSet called");
-
         // Create ordered mapping of Path -> ID upfront
         // This is so that the .coverage IDs in each SigCandidate points to the index of targets
         // We need targets and .coverage information to be in sync to link to predictor labels
@@ -366,7 +364,7 @@ public class AutoYaraCluster {
                 });
 
         Map<AlphabetGram, AtomicInteger> final_candidates = ngram.finishExactCount();
-        System.out.println("# candidates after exact count: " + final_candidates.size());
+        // System.out.println("# candidates after exact count: " + final_candidates.size());
         //We now have a set of potential n-grams to use as yara rules. 
         //Lets go through and remove non-vaiable candidates 
 
@@ -388,7 +386,7 @@ public class AutoYaraCluster {
             double mal_fp = mal_bloom.get(candidate) / (double) mal_bloom.divisor;
             return ben_fp > fp_rate || mal_fp > fp_rate;
         });
-        System.out.println("# candidates after 0x00 0xFF entropy post filtering: " + final_candidates.size());
+        // System.out.println("# candidates after 0x00 0xFF entropy post filtering: " + final_candidates.size());
 
         //Now we need to scan the data again. We have rough hit rates
         //but some of our input rules may be very corelated with eachother
@@ -419,7 +417,7 @@ public class AutoYaraCluster {
             cur_working_set.put(new SigCandidate(candidate, ben_fp, mal_fp, e.getValue()), e.getValue());
         });
 
-        System.out.println("# candidates after populate working set: " + cur_working_set.size());
+        // System.out.println("# candidates after populate working set: " + cur_working_set.size());
 
 
         List<SigCandidate> sigCandidates = Collections.EMPTY_LIST;
@@ -427,7 +425,7 @@ public class AutoYaraCluster {
                 .filter(s -> s.getEntropy() > 1.0)
                 .collect(Collectors.toList());
 
-        System.out.println("# candidates after entropy filter: " + sigCandidates.size());
+        // System.out.println("# candidates after entropy filter: " + sigCandidates.size());
 
         if (sigCandidates.isEmpty())//We need to try a different n-gram size
             return Collections.EMPTY_LIST;
@@ -453,7 +451,7 @@ public class AutoYaraCluster {
             if (!group.isEmpty())
                 finalCandidates.add(Collections.max(group, (SigCandidate arg0, SigCandidate arg1) -> Double.compare(arg0.getEntropy(), arg1.getEntropy())));
         }
-        System.out.println("# final candidates: " + finalCandidates.size());
+        // System.out.println("# final candidates: " + finalCandidates.size());
 
         return finalCandidates;
     }

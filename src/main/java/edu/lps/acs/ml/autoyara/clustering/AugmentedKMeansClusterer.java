@@ -42,13 +42,13 @@ public class AugmentedKMeansClusterer extends ClusteringAlgorithm {
             Yi.get(this.predictorLabels[i]).add(i);
         }
 
-        /*for (int i = 0; i < k; i++) {
+        /* for (int i = 0; i < k; i++) {
             List<Integer> a = Yi.get(i);
             for (Integer x:  a) {
                 System.out.print(x + ", ");
             }
             System.out.print("\n");
-        }*/
+        } */
 
         // Step 2-4: Run CRDEST for each coordinate of each Yi
         double[][] centroids = new double[k][d];
@@ -79,15 +79,15 @@ public class AugmentedKMeansClusterer extends ClusteringAlgorithm {
 
         // Convert centroids to cluster assignments
         int[] joint_designations = assignToClusters(A, centroids);
-        // System.out.println("augmented kmeans joint designation" + Arrays.toString(joint_designations));
+        System.out.println("augmented kmeans joint designation 2 " + Arrays.toString(joint_designations));
 
-        for (int i = 0; i < k; i++) {
+        /*for (int i = 0; i < k; i++) {
             // For each coordinate/feature
             for (int j = 0; j < d; j++) {
                 System.out.print(centroids[i][j] + ", ");
             }
             System.out.print("\n");
-        }
+        }*/
 
         // Create final output
         createAssignments(sigDataset, Z, output, joint_designations, k);
@@ -101,11 +101,14 @@ public class AugmentedKMeansClusterer extends ClusteringAlgorithm {
 
         // Step 1: Randomly partition points into X1 and X2
         Random rand = new Random();
+        // rand.setSeed(0L);
+
         List<Double> allPoints = new ArrayList<>();
         for (double point : dimensionCoordinates) {
             allPoints.add(point);
         }
         Collections.shuffle(allPoints, rand);
+
         List<Double> Z = new ArrayList<>();
 
         if (m >= 2) { // we can only use CRDEST when we have enough labels, otherwise, default to median
