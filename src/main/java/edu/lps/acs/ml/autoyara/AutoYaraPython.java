@@ -251,6 +251,7 @@ public class AutoYaraPython extends AutoYaraCluster {
         int N = targets.size(); // number of files in the corpus
 
         YaraRuleContainerConjunctive yara = new YaraRuleContainerConjunctive(N, this.name); // initialize a new yara container
+        yara.outputDictionary.put("k_clusters", 0);
 
         if(D == 0)//No candidates, nothing to do :(
             return yara;
@@ -281,6 +282,8 @@ public class AutoYaraPython extends AutoYaraCluster {
         {
             col_clusters.add(IntList.range(D));
             row_clusters.add(IntList.range(N));
+
+            yara.outputDictionary.put("k_clusters", 1);
         }
         else
         {
