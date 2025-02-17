@@ -72,6 +72,7 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
 //        }
 
         // cluster Z
+
         return clusterer.cluster(sigDataset, Z);
     }
 

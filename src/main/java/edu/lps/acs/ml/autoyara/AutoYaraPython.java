@@ -2,6 +2,7 @@ package edu.lps.acs.ml.autoyara;
 
 import com.beust.jcommander.Parameter;
 import edu.lps.acs.ml.autoyara.clustering.*;
+import edu.lps.acs.ml.ngram3.utils.GZIPHelper;
 import jsat.SimpleDataSet;
 import jsat.classifiers.DataPoint;
 import jsat.clustering.biclustering.SpectralCoClustering;
@@ -11,10 +12,9 @@ import jsat.utils.IntList;
 import jsat.utils.concurrent.AtomicDouble;
 
 import javax.naming.Binding;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
+import java.nio.file.FileVisitOption;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentSkipListSet;
@@ -288,6 +288,8 @@ public class AutoYaraPython extends AutoYaraCluster {
             col_clusters.addAll(out.columnAssignments);
             row_clusters.addAll(out.rowAssignments);
 
+            yara.outputDictionary.put("k_clusters", out.k_used);
+
             if(!alreadyFailedOn.contains(gram_size) && (row_clusters.isEmpty() || col_clusters.isEmpty()))
             {
                 alreadyFailedOn.add(gram_size);
@@ -457,57 +459,97 @@ public class AutoYaraPython extends AutoYaraCluster {
         this.best_rule_gram_size = new AtomicInteger(0);
     }
 
-    public List<SigCandidate> findBestRulePipelineCandidateSet(Integer gram_size) {
-        if (best_rule_coverage.get() >= 1.0 && meets_min_desired_coverage.get())
-            return new ArrayList<>(); //STOP, you can't get any better
+    /**
+     *
+     * @param header A string to add to the begining of the comment for the results
+     * @param evalDirs the list of directories to perform evaluations on
+     * @param yara the yara rule to evaluate, for which we will add comments to the Yara rule with the rules on each directory
+     * @return the match rate against all files in the given directories
+     */
+    public double addMatchEval(String header, String dictHeader, List<File> evalDirs, YaraRuleContainerConjunctive yara) {
+        //Lets check against false positive directories to make sure all is kosher in the world
+        if (!evalDirs.isEmpty()) {
+            double numer = 0;
+            double denom = 0;
+            StringBuilder comment = new StringBuilder();
+            comment.append(header).append("\n");
 
-        List<SigCandidate> finalCandidates = buildCandidateSet(targets, gram_size, ben_blooms, mal_blooms,
-                max_filter_size, toKeep, silent, Math.max(false_pos_b, false_pos_m));
+            /**
+             * If there are sub folders, we will add comments to delineate by
+             * folder what the hits where. If this is just a list of files, we
+             * will change naming style of the comment.
+             */
+            boolean added_based_on_folders = false;
+            List<File> looseFiles = new ArrayList<>();
+            for (File dir : evalDirs) {
+                if (dir.isFile()) {
+                    looseFiles.add(dir);
+                    continue;
+                }
 
-        return finalCandidates;
-    }
+                try {
+                    List<Path> toTest = Files.walk(dir.toPath(), FileVisitOption.FOLLOW_LINKS)
+                            .filter(Files::isRegularFile).collect(Collectors.toList());
+                    for (Path p : toTest)
+                        looseFiles.add(p.toFile());
+                    if (!toTest.isEmpty())
+                        continue;
+                    comment.append(dir.getAbsoluteFile() + ":");
+                    List<Path> fps = toTest.parallelStream().filter(p ->
+                    {
+                        try (BufferedInputStream bis = new BufferedInputStream(GZIPHelper.getStream(Files.newInputStream(p)))) {
+                            return yara.match(bis);
+                        } catch (IOException ex) {
+                            return false;
+                        }
+                    }).collect(Collectors.toList());
 
-    public void findBestRulePipelineClustering(Integer gram_size, List<SigCandidate> finalCandidates) {
-        Set<Integer> alreadyFailedOn = new HashSet<>();
+                    denom += toTest.size();
+                    numer += fps.size();
+                    comment.append(fps.size() + "/" + toTest.size() + "\n");
+                    added_based_on_folders = true;
+                    if (!fps.isEmpty()) {
+                        //TODO, write out the files that we FPd on
+                    }
 
-        Set<Integer> rows_covered = new HashSet<>();
+                } catch (IOException ex) {
+                    Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
+                }
 
-        YaraRuleContainerConjunctive yara = buildRule2(finalCandidates, targets, rows_covered,
-                gram_size, alreadyFailedOn);
-
-        double fp_rate = fpEvalDirs.isEmpty() ? 0 : addMatchEval("False Positives:", fpEvalDirs, yara);
-        double tp_rate = tpEvalDirs.isEmpty() ? 0 : addMatchEval("True Positives:", tpEvalDirs, yara);
-        double input_tp_rate = addMatchEval("Input TP Rate:", inDir, yara);
-
-        if (print_rules) {
-            System.out.println(yara);
-            //                System.out.println("Selected " + toUse.size() + " grams to cover " + this_coverage);
-        }
-
-        if (save_all_rules) {
-            try (BufferedWriter bw = new BufferedWriter(new FileWriter(new File(out_dir, name + "_" + gram_size + "_" + this.biclusterPipelineAlg + "_" + this.clusterAlg + ".yara")))) {
-                bw.write(yara.toString());
-            } catch (IOException ex) {
-                Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
+                yara.addComment(comment.toString());
             }
-        }
 
-        int log_diff_gram_size = log2(gram_size) - log2(best_rule_gram_size.get());
-        boolean this_rule_strong = yara.minConjunctionSize() >= 5;
-        double penalty = Math.min(yara.minConjunctionSize() / 5.0, 1);
+            //The loose files now get done in one go
+            List<File> fps = looseFiles.parallelStream().filter(p ->
+            {
+                try (BufferedInputStream inputStream = new BufferedInputStream(GZIPHelper.getStream(Files.newInputStream(p.toPath())))) {
+                    return yara.match(inputStream);
+                } catch (IOException ex) {
+                    return false;
+                }
+            }).collect(Collectors.toList());
 
-        if (input_tp_rate * penalty > best_rule_coverage.get() + log_diff_gram_size / 100.0)//give a slight favor to smaller rules!
-        {
-            best_rule.clear();
-            best_rule.add(yara);
+            denom += looseFiles.size();
+            numer += fps.size();
+            if (added_based_on_folders)
+                comment.append("Other Files:");
+            //else, its not "other", but all
+            comment.append(fps.size() + "/" + looseFiles.size() + "\n");
 
-            best_rule_coverage.set(input_tp_rate * penalty);
-            best_rule_gram_size.set(gram_size);
-            meets_min_desired_coverage.set(this_rule_strong);
-        }
+            //if (!fps.isEmpty()) {
+                //TODO, write out the files that we FPd on
+            //}
+            yara.addComment(comment.toString());
+
+            yara.outputDictionary.put(dictHeader, fps.size());
+            yara.outputDictionary.put(dictHeader + "_total", looseFiles.size());
+
+            return numer / denom;
+        } else
+            return 1.0;
     }
 
-    // deprecated, please findBestRulePipelineInit, then findBestRulePipelineCandidateSet + findBestRulePipelineClustering
+    // please call findBestRulePipelineInit, then findBestRule
     private Collection<YaraRuleContainerConjunctive> findBestRule(SortedSet<Integer> bloomSizes,
                                                       Map<Integer, CountingBloom> ben_blooms,
                                                       Map<Integer, CountingBloom> mal_blooms,
@@ -544,9 +586,14 @@ public class AutoYaraPython extends AutoYaraCluster {
             YaraRuleContainerConjunctive yara = buildRule2(finalCandidates, targets, rows_covered,
                     gram_size, alreadyFailedOn);
 
-            double fp_rate = fpEvalDirs.isEmpty() ? 0 : addMatchEval("False Positives:", fpEvalDirs, yara);
-            double tp_rate = tpEvalDirs.isEmpty() ? 0 : addMatchEval("True Positives:", tpEvalDirs, yara);
-            double input_tp_rate = addMatchEval("Input TP Rate:", inDir, yara);
+            yara.outputDictionary.put("gram_size", gram_size);
+
+            // currently not implemented
+            double fp_rate = fpEvalDirs.isEmpty() ? 0 : addMatchEval("False Positives:", "FP_external", fpEvalDirs, yara);
+            double tp_rate = tpEvalDirs.isEmpty() ? 0 : addMatchEval("True Positives:", "TP_external", tpEvalDirs, yara);
+
+            double input_tp_rate = addMatchEval("Input TP Rate:", "TP", inDir, yara);
+            // System.out.println("input tp rate " + input_tp_rate);
 
             if (print_rules) {
                 System.out.println(yara);
@@ -582,18 +629,13 @@ public class AutoYaraPython extends AutoYaraCluster {
     private void saveRule(Collection<YaraRuleContainerConjunctive> bestRule) throws IOException {
         this.out_file = new File(this.out_dir + "/" + this.name + ".yara");
 
-        if (!silent || true)
+        if (!silent)
             System.out.println("Saving rule to " + this.out_file.getAbsolutePath());
 
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(this.out_file))) {
             YaraRuleContainerConjunctive yara = bestRule.stream().findFirst().get();
             bw.write(bestRule.toString());
         }
-    }
-
-    private String getRuleString(Collection<YaraRuleContainerConjunctive> bestRule) {
-        YaraRuleContainerConjunctive yara = bestRule.stream().findFirst().get();
-        return yara.toString();
     }
 
     // please use run() only if you want it to automatically generate a YARA file at the output directory
@@ -611,7 +653,7 @@ public class AutoYaraPython extends AutoYaraCluster {
         saveRule(bestRule);
     }
 
-    public String pythonRun() throws IOException {
+    public HashMap<String, Object> pythonRun() throws IOException {
         // we no longer use this function from java, python will directly call it for more granular control
         //findBestRulePipelineInit(); // init to read files and load them as a class field, disabled because python has control of it
 
@@ -620,12 +662,15 @@ public class AutoYaraPython extends AutoYaraCluster {
 
         if (bestRule.isEmpty()) {
             System.out.println("[GENERATION FAILED] Could not create yara-rule that matched constraints!");
-            return "";
+            return null;
         }
 
-        System.out.println("Saving rule to " + out_dir + " | " + out_file);
-        saveRule(bestRule);
+        if (!this.out_dir.trim().isEmpty())
+            saveRule(bestRule);
 
-        return getRuleString(bestRule);
+        YaraRuleContainerConjunctive yara = bestRule.stream().findFirst().get();
+        yara.appendRuleData();
+
+        return yara.outputDictionary;
     }
 }

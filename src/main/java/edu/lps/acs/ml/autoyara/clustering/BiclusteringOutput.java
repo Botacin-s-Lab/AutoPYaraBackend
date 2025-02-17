@@ -9,6 +9,7 @@ import java.util.List;
 public class BiclusteringOutput {
     public List<List<Integer>> rowAssignments;
     public List<List<Integer>> columnAssignments;
+    public int k_used = 0;
 
     public BiclusteringOutput() {
         this.rowAssignments = new ArrayList<>();

@@ -30,6 +30,7 @@ public class VBGMMClusterer extends ClusteringAlgorithm {
         }
 
         createMixtureAssignments(sigDataset, Z, output, assignments, assignments[0].length); // note: this will directly modify output object by reference
+        output.k_used = assignments[0].length;
 
         return output;
     }

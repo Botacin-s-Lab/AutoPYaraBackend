@@ -27,12 +27,13 @@ import java.util.Set;
  */
 public class YaraRuleContainerConjunctive
 {
-    int total_count;
-    String name;
-    List<String> extraComments;
-    List<Set<SigCandidate>> signature_sets = new ArrayList<>();
-    List<Integer> min_counts = new ArrayList<>();
-    
+    int total_count; // # of file paths scanned
+    String name; // rule name
+    List<String> extraComments; // comments added at the header section
+    List<Set<SigCandidate>> signature_sets = new ArrayList<>(); // sets of conditions
+    List<Integer> min_counts = new ArrayList<>(); // for each signature sets, how many must exist in the exe to be flagged
+
+    public HashMap<String, Object> outputDictionary = new HashMap<>();
 
     public YaraRuleContainerConjunctive(int total_count, String name)
     {
@@ -377,5 +378,25 @@ public class YaraRuleContainerConjunctive
                 && block != Character.UnicodeBlock.SPECIALS;
     }
     
-    
+    public void appendRuleData() {
+        outputDictionary.put("rule_string", toString());
+        outputDictionary.put("total_files", this.total_count);
+        outputDictionary.put("name", this.name);
+
+        Map<SigCandidate, String> sigToName = new HashMap<>();
+        for(Set<SigCandidate> sig_set : signature_sets)
+            for(SigCandidate s : sig_set)
+                if(!sigToName.containsKey(s))
+                    sigToName.putIfAbsent(s, "$x" + sigToName.size());
+
+        outputDictionary.put("strings", sigToName.size());
+
+        List<Integer> max_counts = new ArrayList<>();
+        for(int i = 0; i < signature_sets.size(); i++)
+        {
+            max_counts.add(signature_sets.get(i).size());
+        }
+        outputDictionary.put("conditions_min", this.min_counts);
+        outputDictionary.put("conditions_max", max_counts);
+    }
 }

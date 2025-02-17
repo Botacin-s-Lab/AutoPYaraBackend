@@ -21,7 +21,7 @@ public class AugmentedKMeansClusterer extends ClusteringAlgorithm {
         int n = A.rows();
         int d = A.cols();
 
-        System.out.println("begin augmented clustering of matrix A with " + n + " rows and " + d + " columns");
+        // System.out.println("begin augmented clustering of matrix A with " + n + " rows and " + d + " columns");
 
         // Step 1: Create Yi sets based on predictor labels
         List<List<Integer>> Yi = new ArrayList<>(k);
@@ -79,7 +79,7 @@ public class AugmentedKMeansClusterer extends ClusteringAlgorithm {
 
         // Convert centroids to cluster assignments
         int[] joint_designations = assignToClusters(A, centroids);
-        System.out.println("augmented kmeans joint designation 2 " + Arrays.toString(joint_designations));
+        System.out.println("augmented kmeans joint designation " + Arrays.toString(joint_designations));
 
         /*for (int i = 0; i < k; i++) {
             // For each coordinate/feature
@@ -91,6 +91,8 @@ public class AugmentedKMeansClusterer extends ClusteringAlgorithm {
 
         // Create final output
         createAssignments(sigDataset, Z, output, joint_designations, k);
+        output.k_used = k;
+
         return output;
     }
 

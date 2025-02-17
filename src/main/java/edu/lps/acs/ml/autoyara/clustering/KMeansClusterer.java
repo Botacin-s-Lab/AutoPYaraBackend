@@ -28,9 +28,10 @@ public class KMeansClusterer extends ClusteringAlgorithm {
         // Perform clustering with the array to store assignments
         kmeans.cluster(Z, this.k, true, joint_designations);
 
-        // System.out.println("kmeans joint designation" + Arrays.toString(joint_designations));
+        System.out.println("kmeans "+ this.k + " joint designation" + Arrays.toString(joint_designations));
 
         createAssignments(sigDataset, Z, output, joint_designations, k);
+        output.k_used = this.k;
 
         return output;
     }
