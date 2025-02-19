@@ -13,6 +13,8 @@ public class VBGMMClusterer extends ClusteringAlgorithm {
     public BiclusteringOutput cluster(SimpleDataSet sigDataset, SimpleDataSet Z) {
         BiclusteringOutput output = new BiclusteringOutput();
 
+        //System.out.println("VBGMM clustering " + Z.getDataMatrix().rows() + " rows and " + Z.getDataMatrix().cols() + " cols");
+
         VBGMM vbgmm = new VBGMM(VBGMM.COV_FIT_TYPE.DIAG);
         int[] joint_designations = vbgmm.cluster(Z, true, null);
 

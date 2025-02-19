@@ -13,6 +13,7 @@ import jsat.linear.TruncatedSVD;
 import java.util.List;
 
 public class SpectralCoClusterPipeline implements BiclusteringPipeline {
+    // TODO: properly port the members to be private
     public static SpectralCoClustering.InputNormalization DEFAULT = SpectralCoClustering.InputNormalization.BISTOCHASTIZATION;
     public SpectralCoClustering.InputNormalization inputNormalization = SpectralCoClustering.InputNormalization.BISTOCHASTIZATION;
 
@@ -20,6 +21,7 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
     public SpectralCoClusterPipeline(int k) {
         this.k = k;
     }
+    public String predictorExtensionMode = "NewLabel";
 
     public BiclusteringOutput bicluster(SimpleDataSet sigDataset, ClusteringAlgorithm clusterer, int[] predictorLabels) {
         //﻿1. Given A, form An = D_1^{−1/2} A D_2^{−1/2}
@@ -33,18 +35,24 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
         Matrix A_n = inputNormalization.normalize(A, R, C);
 
         //﻿2. Compute l = ceil(log2 k) singular vectors of A_n, u2, . . . u_l+1 and v2, . . . v_l+1, and form the matrix Z as in (12)
-        // k was previously estimated using the heuristic below, however, this estimation is now done in a previous part of the pipeline
+        // k was previously estimated using the k_max heuristic below, however, this estimation is now done upstream in the pipeline
         // int k_max = Math.min(A.rows(), A.cols());
         int l = (int) Math.ceil(Math.log(k)/Math.log(2.0));
+        if (l <= 0) {
+            // just in case upstream k fails, we revert back to the old algorithm
+            System.out.println("l = "+ l +" too small! reverting to Math.min(A.rows(), A.cols()) or " + Math.min(A.rows(), A.cols()));
+            l = Math.min(A.rows(), A.cols());
+        }
+        if (predictorLabels != null && clusterer.requirePredictorLabel) {
+            // problem: predictorLabels are assigned to the original rows of the matrix only, how do we extend to the columns during Z transforamtion?
+            // for clustering algorithms that need a predictor label transformed to Z, we allow several options
+            // NewLabel: add a new cluster and assign it to all V components <- using this right now
+            // Separate: each new feature has a separate label, unimplemented
+            // NearestCluster: assign the feature to the same cluster as the samples its most commonly found in, unimplemented
 
-        // problem: predictorLabels are assigned to the original rows of the matrix only, how do we extend to the columns during Z transforamtion?
-        // for clustering algorithms that need a predictor label transformed to Z, we allow several options
-        // NewLabel: add a new cluster and assign it to all V components <- using this right now
-        // Separate: each new feature has a separate label, unimplemented
-        // NearestCluster: assign the feature to the same cluster as the samples its most commonly found in, unimplemented
-        if (predictorLabels != null) {
             int[] transformedPredictorLabels = new int[A.rows() + A.cols()];
             String mode = "NewLabel";
+
             if (mode.equals("NewLabel")) {
                 this.k = k + 1;
                 l = (int) Math.ceil(Math.log(this.k)/Math.log(2.0));
@@ -55,11 +63,14 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
             }
             clusterer.setPredictorLabels(transformedPredictorLabels);
             clusterer.setK(this.k);
+            System.out.println("generated predictor labels");
         }
 
         //A_n has r rows and c columns. We are going to make a new data matrix Z
         //Z will have (r+c) rows, and l columns.
         SimpleDataSet Z = create_Z_dataset(A_n, l, R, C, inputNormalization);//+1 b/c we are going to skip the first SV
+        if (Z == null)
+            return null;
 
 //        System.out.println("SimpleDataSet2");
 //        Matrix Zm = Z.getDataMatrix();
@@ -85,8 +96,15 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
         Matrix V = svd.getV().transpose();
         //In some cases, Drop the first column, which corresponds to the first SV we don't want
         int to_skip = 1;
-        U = new SubMatrix(U, 0, to_skip, U.rows(), l+to_skip);
-        V = new SubMatrix(V, 0, to_skip, V.rows(), l+to_skip);
+
+        try {
+            U = new SubMatrix(U, 0, to_skip, U.rows(), l+to_skip);
+            V = new SubMatrix(V, 0, to_skip, V.rows(), l+to_skip);
+        } catch(ArithmeticException e) {
+            System.out.println("cannot use VBGMM, dataset too small!");
+            return null;
+        }
+
         /* Orig paper says to do this multiplication for re-scaling. Why not for
          * bistochastic? Its very similar! b/c in "﻿Spectral Biclustering of
          * Microarray Data: Coclustering Genes and Conditions" where bistochastic

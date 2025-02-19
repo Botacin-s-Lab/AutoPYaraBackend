@@ -12,6 +12,7 @@ public class AugmentedKMeansClusterer extends ClusteringAlgorithm {
     public AugmentedKMeansClusterer(int k) {
         this.k = k;
         this.alpha = 0.1; // Can be made configurable
+        this.requirePredictorLabel = true;
     }
 
     @Override

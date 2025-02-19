@@ -53,6 +53,7 @@ import java.util.stream.IntStream;
 public class AutoYaraPython extends AutoYaraCluster {
     private final Bytes2Bloom myBloom;
 
+    // These members MUST be public. Otherwise JPype cannot access them without setters/getters
     @Parameter(names = "--clusterAlg", description = "Clustering algorithm to use")
     public String clusterAlg = "VBGMM";
 
@@ -283,17 +284,24 @@ public class AutoYaraPython extends AutoYaraCluster {
             col_clusters.add(IntList.range(D));
             row_clusters.add(IntList.range(N));
 
+            System.out.println("D = 1, skip biclustering");
             yara.outputDictionary.put("k_clusters", 1);
         }
         else
         {
             BiclusteringOutput out = runCoclusterAlg(sigDataset);
+            if (out == null)
+                return null;
+
             col_clusters.addAll(out.columnAssignments);
             row_clusters.addAll(out.rowAssignments);
 
             yara.outputDictionary.put("k_clusters", out.k_used);
 
-            if(!alreadyFailedOn.contains(gram_size) && (row_clusters.isEmpty() || col_clusters.isEmpty()))
+            // For evaluation reasons, we don't attempt to use getCoClusteringH, we want to only run the algorithm we
+            // picked. If it fails, then it should return nothing, not revert to a backup behavior.
+
+            /* if(!alreadyFailedOn.contains(gram_size) && (row_clusters.isEmpty() || col_clusters.isEmpty()))
             {
                 alreadyFailedOn.add(gram_size);
                 row_clusters.clear();
@@ -308,7 +316,7 @@ public class AutoYaraPython extends AutoYaraCluster {
                     row_clusters.clear();
                     col_clusters.clear();
                 }
-            }
+            } */
         }
 
         // stage 4: acquire max_row_size_seen, max_features_seen, min_rows, min_features, feature_counts_all
@@ -578,6 +586,8 @@ public class AutoYaraPython extends AutoYaraCluster {
                 List<SigCandidate> finalCandidates = buildCandidateSet(targets, gram_size, ben_blooms, mal_blooms,
                         max_filter_size, toKeep, silent, Math.max(false_pos_b, false_pos_m));
 
+                System.out.println("Extracted " + finalCandidates.size() + " candidates for n-gram " + gram_size);
+
                 finalCandidatesCache.put(gram_size, finalCandidates);
             }
             List<SigCandidate> finalCandidates = finalCandidatesCache.get(gram_size);
@@ -588,6 +598,11 @@ public class AutoYaraPython extends AutoYaraCluster {
 
             YaraRuleContainerConjunctive yara = buildRule2(finalCandidates, targets, rows_covered,
                     gram_size, alreadyFailedOn);
+
+            if (yara == null) {
+                System.out.println("failed to build rules for n-gram " + gram_size);
+                return;
+            }
 
             yara.outputDictionary.put("gram_size", gram_size);
 
@@ -668,7 +683,7 @@ public class AutoYaraPython extends AutoYaraCluster {
             return null;
         }
 
-        if (!this.out_dir.trim().isEmpty())
+        if (this.out_dir != null && !this.out_dir.trim().isEmpty())
             saveRule(bestRule);
 
         YaraRuleContainerConjunctive yara = bestRule.stream().findFirst().get();

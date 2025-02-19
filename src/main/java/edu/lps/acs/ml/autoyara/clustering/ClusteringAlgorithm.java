@@ -12,6 +12,8 @@ public class ClusteringAlgorithm {
     protected int[] predictorLabels; // this is only used by the AugmentedKmeans clusterer
     protected int k; // number of clusters, only used by certain algorithms that require k
 
+    protected boolean requirePredictorLabel = false;
+
     public BiclusteringOutput cluster(SimpleDataSet sigDataset, SimpleDataSet Z) {
         throw new UnsupportedOperationException("cluster needs to be overrided by an inheriting class");
     }
