@@ -11,7 +11,6 @@ import jsat.math.OnLineStatistics;
 import jsat.utils.IntList;
 import jsat.utils.concurrent.AtomicDouble;
 
-import javax.naming.Binding;
 import java.io.*;
 import java.nio.file.FileVisitOption;
 import java.nio.file.Files;
@@ -92,6 +91,14 @@ public class AutoYaraPython extends AutoYaraCluster {
     public boolean cacheByteCandidates = true;
     private Map<Integer, List<SigCandidate>> finalCandidatesCache = new HashMap<>();
     private List<File> cachedDir;
+
+    // the AutoYara selection heuristic encourages overfitting
+    // since good 8-grams are rarer, we may occasionally get 1-2 candidates, leading to the heuristic skipping bicluster algorithms
+    // and producing one large bicluster, which the selection heuristic is biased towards
+    // it does not help that 8-grams usually score higher in coverage TP and outcompetes larger n-grams, leading to worse FP rates
+    public String selectionHeuristic = "PYara"; // "AutoYara", "PYara"
+    public boolean useBackupCoClustering = false; // for experiments, we don't use this, for the real world, we do use it
+    public double biclusterFeaturePruneCoverage = 0.5; // prune biclusters features that don't cover this many % of files
 
     public AutoYaraPython() {
         // we copy AutoYaraCluster + all of its parameters
@@ -205,6 +212,12 @@ public class AutoYaraPython extends AutoYaraCluster {
 
             if (this.generateName)
                 this.name += "_k" + selectedK;
+        } else if (this.clusterAlg.equals("AugmentedKMeansDBSCANSoft") || this.clusterAlg.equals("AugmentedKMeansVTSoft")) {
+            // System.out.println("Clusterer: using AugmentedKMeans with k " + selectedK);
+            clusterer = new AugmentedKMeansSoftClusterer(selectedK);
+
+            if (this.generateName)
+                this.name += "_k" + selectedK;
         } else {
             // System.out.println("Cluster algorithm " + this.clusterAlg + " not found. Defaulting to VBGMM clusterer.");
             // System.out.println("Clusterer: using VBGMM");
@@ -251,10 +264,21 @@ public class AutoYaraPython extends AutoYaraCluster {
         int D = finalCandidates.size(); // number of n-gram candidates/features
         int N = targets.size(); // number of files in the corpus
 
+        if (this.selectionHeuristic.equals("AutoYara")) {
+            if (this.generateName) {
+                this.name += "_" + this.biclusterPipelineAlg;
+                this.name += "_" + this.clusterAlg;
+                this.name += "_" + "AutoYaraHeuristic";
+            }
+            return buildRule(finalCandidates, targets, rows_covered, this.name, SpectralCoClustering.InputNormalization.BISTOCHASTIZATION, gram_size, alreadyFailedOn);
+        }
+
         YaraRuleContainerConjunctive yara = new YaraRuleContainerConjunctive(N, this.name); // initialize a new yara container
         yara.outputDictionary.put("k_clusters", 0);
+        yara.outputDictionary.put("byte_candidate_count", D);
+        yara.outputDictionary.put("file_count", N);
 
-        if(D == 0)//No candidates, nothing to do :(
+        if(D <= 1) // not enough candidates, we need at least 2 features
             return yara;
         // System.out.println("We have " +  D + " potential features");
         // Lets build a dataset object representing the files and which signatures (features) occured in each sample
@@ -279,44 +303,35 @@ public class AutoYaraPython extends AutoYaraCluster {
         List<List<Integer>> col_clusters = new ArrayList<>();
 
         // stage 3: given matrix sigDataset, bicluster it
-        if(D == 1) //if we only have 1 candidate, we don't need to bicluster
+        BiclusteringOutput out = runCoclusterAlg(sigDataset);
+        if (out == null)
+            return null;
+
+        col_clusters.addAll(out.columnAssignments);
+        row_clusters.addAll(out.rowAssignments);
+
+        yara.outputDictionary.put("k_clusters", out.k_used);
+        //System.out.println("got " + out.columnAssignments.size() + " biclusters!");
+
+        if(this.useBackupCoClustering && !alreadyFailedOn.contains(gram_size) && (row_clusters.isEmpty() || col_clusters.isEmpty()))
         {
-            col_clusters.add(IntList.range(D));
-            row_clusters.add(IntList.range(N));
-
-            System.out.println("D = 1, skip biclustering");
-            yara.outputDictionary.put("k_clusters", 1);
-        }
-        else
-        {
-            BiclusteringOutput out = runCoclusterAlg(sigDataset);
-            if (out == null)
-                return null;
-
-            col_clusters.addAll(out.columnAssignments);
-            row_clusters.addAll(out.rowAssignments);
-
-            yara.outputDictionary.put("k_clusters", out.k_used);
-
             // For evaluation reasons, we don't attempt to use getCoClusteringH, we want to only run the algorithm we
-            // picked. If it fails, then it should return nothing, not revert to a backup behavior.
+            // picked. If it fails, then it should return nothing, not revert to a backup behavior, doing this
+            // makes it harder to evaluate results since we don't know how much each algorithm relies on the backup
 
-            /* if(!alreadyFailedOn.contains(gram_size) && (row_clusters.isEmpty() || col_clusters.isEmpty()))
+            alreadyFailedOn.add(gram_size);
+            row_clusters.clear();
+            col_clusters.clear();
+            try
             {
-                alreadyFailedOn.add(gram_size);
+                getCoClusteringH(sigDataset, row_clusters, col_clusters);
+            }
+            catch(Exception ex2)
+            {
+                //we give up
                 row_clusters.clear();
                 col_clusters.clear();
-                try
-                {
-                    getCoClusteringH(sigDataset, row_clusters, col_clusters);
-                }
-                catch(Exception ex2)
-                {
-                    //we give up
-                    row_clusters.clear();
-                    col_clusters.clear();
-                }
-            } */
+            }
         }
 
         // stage 4: acquire max_row_size_seen, max_features_seen, min_rows, min_features, feature_counts_all
@@ -345,7 +360,7 @@ public class AutoYaraPython extends AutoYaraCluster {
         {
             int C_size = row_clusters.get(c).size();
             int[] feature_counts = feature_counts_all.get(c);
-            return (int)col_clusters.get(c).stream().filter(j->feature_counts[j] >= 0.5*C_size).count();
+            return (int)col_clusters.get(c).stream().filter(j->feature_counts[j] >= this.biclusterFeaturePruneCoverage*C_size).count();
         }).max().orElse(1);
 
         // min features is "we need X many features that cover 50%+ of the samples in this bicluster"
@@ -356,18 +371,26 @@ public class AutoYaraPython extends AutoYaraCluster {
         for (int c = 0; c < row_clusters.size(); c++)
         {
             int C_size = row_clusters.get(c).size();
-            if(C_size < min_rows) // pick only clusters that cover a lot of files/features
+
+            //System.out.println("\t" + out.rowAssignments.get(c).size() + " x " + out.columnAssignments.get(c).size());
+
+            if(C_size < min_rows) {// pick only clusters that cover a lot of files
+                //System.out.println("\tfew files! " + C_size + " < " + min_rows);
                 continue;
+            }
             int[] feature_counts = feature_counts_all.get(c);
 
             //First, lets remove obvious non-starters. You need to appear in at least half the files in your cluster
             Set<Integer> selected_features = new HashSet<>(col_clusters.get(c));
 
-            //We are only going to consider features that occur in >= 50% of this cluster
-            selected_features.removeIf(j-> feature_counts[j] < 0.5*C_size);
+            //We are only going to consider features that occur in >= X% of this cluster
+            selected_features.removeIf(j-> feature_counts[j] < this.biclusterFeaturePruneCoverage*C_size);
 
-            if(selected_features.size() < min_features)
+            //System.out.println("\thas " + selected_features.size() + " good features!");
+            if(selected_features.size() < min_features) {
+                //System.out.println("\tfew features! " + selected_features.size() + " < " + min_features);
                 continue;
+            }
 
             conjunctionSet.add(selected_features);
 
@@ -418,6 +441,7 @@ public class AutoYaraPython extends AutoYaraCluster {
 
             int count_min = file_occurance_counts.get(Math.min(indx+1, file_occurance_counts.size()-1));
 
+            //System.out.println("\tadded condition: " + count_min + " of " + selected_features.size() + " selected features");
             yara.addSignature(count_min, selected_features.stream().map(i->finalCandidates.get(i)).collect(Collectors.toSet()));
 
         }
@@ -574,7 +598,7 @@ public class AutoYaraPython extends AutoYaraCluster {
          * in conjunctions
          */
         this.meets_min_desired_coverage = new AtomicBoolean(false);
-        this.best_rule_gram_size = new AtomicInteger(0);
+        this.best_rule_gram_size = new AtomicInteger(1024);
 
         bloomSizes.stream().forEach(gram_size ->
         {
@@ -627,11 +651,21 @@ public class AutoYaraPython extends AutoYaraCluster {
             }
 
             int log_diff_gram_size = log2(gram_size) - log2(best_rule_gram_size.get());
+
             boolean this_rule_strong = yara.minConjunctionSize() >= 5;
             double penalty = Math.min(yara.minConjunctionSize() / 5.0, 1);
+            if (this.selectionHeuristic.equals("PYara")) {
+                //log_diff_gram_size = 0; // old heuristic gets stuck on smaller rules constantly, we give an advantage to larger rules instead but no difference ramp!
+                penalty = 1;//Math.min(yara.minConjunctionSize() / 5.0 + Math.max(0, 5 - log2(gram_size)) / 5.0, 1);; // this penalty encourages rules to be around 64/128 grams
 
-            if (input_tp_rate * penalty > best_rule_coverage.get() + log_diff_gram_size / 100.0)//give a slight favor to smaller rules!
+                //penalty = 0.5 + penalty * 0.5; // penalty's power is weakened greatly to not cripple rules too much
+            }
+            //System.out.println(gram_size + " gram scored " + (input_tp_rate * penalty - log_diff_gram_size / 100.0) + ", TP="+input_tp_rate+", minConjunctionSize="+yara.minConjunctionSize() + ", conditions=" + yara.min_counts.size());
+
+            if (input_tp_rate * penalty - log_diff_gram_size / 100.0 > best_rule_coverage.get() )//give a slight favor to smaller rules!
             {
+                //System.out.println(gram_size + " gram replaces! gram " + best_rule_gram_size.get() + "! Scores: NEW=" + (input_tp_rate * penalty) + " vs OLD=" + (best_rule_coverage.get() + log_diff_gram_size / 100.0));
+
                 best_rule.clear();
                 best_rule.add(yara);
 

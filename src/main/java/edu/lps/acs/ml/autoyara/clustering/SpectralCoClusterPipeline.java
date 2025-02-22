@@ -10,6 +10,7 @@ import jsat.linear.Matrix;
 import jsat.linear.SubMatrix;
 import jsat.linear.TruncatedSVD;
 
+import java.util.Arrays;
 import java.util.List;
 
 public class SpectralCoClusterPipeline implements BiclusteringPipeline {
@@ -21,7 +22,7 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
     public SpectralCoClusterPipeline(int k) {
         this.k = k;
     }
-    public String predictorExtensionMode = "NewLabel";
+    public String predictorExtensionMode = "NearestCluster";
 
     public BiclusteringOutput bicluster(SimpleDataSet sigDataset, ClusteringAlgorithm clusterer, int[] predictorLabels) {
         //﻿1. Given A, form An = D_1^{−1/2} A D_2^{−1/2}
@@ -30,18 +31,29 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
         DenseVector R = new DenseVector(A.rows());
         DenseVector C = new DenseVector(A.cols());
 
-        // System.out.println("biclustering algorithm: sigDataset has # rows " + A.rows() + " and # columns " + A.cols());
+        /* System.out.println("biclustering algorithm: sigDataset has # rows " + A.rows() + " and # columns " + A.cols());
+        for (int j = 0; j < A.cols(); j++) {
+            int score = 0;
+            for (int i = 0; i < A.rows(); i++) {
+                if (A.get(i, j) > 0)
+                    score++;
+            }
+
+            System.out.println("Feature " + j + " covers " + score + " samples");
+        }*/
 
         Matrix A_n = inputNormalization.normalize(A, R, C);
 
         //﻿2. Compute l = ceil(log2 k) singular vectors of A_n, u2, . . . u_l+1 and v2, . . . v_l+1, and form the matrix Z as in (12)
         // k was previously estimated using the k_max heuristic below, however, this estimation is now done upstream in the pipeline
         // int k_max = Math.min(A.rows(), A.cols());
+        // int l = Math.min(A.rows(), A.cols());
         int l = (int) Math.ceil(Math.log(k)/Math.log(2.0));
+
         if (l <= 0) {
-            // just in case upstream k fails, we revert back to the old algorithm
-            System.out.println("l = "+ l +" too small! reverting to Math.min(A.rows(), A.cols()) or " + Math.min(A.rows(), A.cols()));
-            l = Math.min(A.rows(), A.cols());
+            // just in case upstream k fails, we make l nonzero
+            // System.out.println("l is <= 0!, setting l = 1, k = " + this.k);
+            l = 1;
         }
         if (predictorLabels != null && clusterer.requirePredictorLabel) {
             // problem: predictorLabels are assigned to the original rows of the matrix only, how do we extend to the columns during Z transforamtion?
@@ -51,19 +63,57 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
             // NearestCluster: assign the feature to the same cluster as the samples its most commonly found in, unimplemented
 
             int[] transformedPredictorLabels = new int[A.rows() + A.cols()];
-            String mode = "NewLabel";
 
-            if (mode.equals("NewLabel")) {
+            if (this.predictorExtensionMode.equals("NewLabel")) {
                 this.k = k + 1;
                 l = (int) Math.ceil(Math.log(this.k)/Math.log(2.0));
 
                 if (A.rows() >= 0) System.arraycopy(predictorLabels, 0, transformedPredictorLabels, 0, A.rows());
                 for (int i = 0; i < A.cols(); i++)
                     transformedPredictorLabels[i + predictorLabels.length] = this.k-1; // we use k-1 instead of k since clusters start at 0
+            } else if (this.predictorExtensionMode.equals("NearestCluster")) {
+                // Copy existing predictor labels for the rows
+                if (A.rows() >= 0) System.arraycopy(predictorLabels, 0, transformedPredictorLabels, 0, A.rows());
+
+                // For each column/feature
+                for (int col = 0; col < A.cols(); col++) {
+                    // Keep count of connections to each cluster
+                    int[] clusterCounts = new int[k];
+                    double[] clusterSums = new double[k];
+
+                    // Look at all rows for this column
+                    for (int row = 0; row < A.rows(); row++) {
+                        double value = A.get(row, col);
+                        if (value > 0) {  // Consider only non-zero connections
+                            int cluster = predictorLabels[row];
+                            clusterCounts[cluster]++;
+                            clusterSums[cluster] += value;
+                        }
+                    }
+
+                    // Find cluster with strongest connection
+                    int bestCluster = 0;
+                    double bestScore = 0;
+                    for (int cluster = 0; cluster < k; cluster++) {
+                        // Use average value as score to avoid bias towards larger clusters
+                        double score = clusterCounts[cluster] > 0 ?
+                                clusterSums[cluster] / clusterCounts[cluster] : 0;
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestCluster = cluster;
+                        }
+                    }
+
+                    // Assign feature to its nearest cluster
+                    transformedPredictorLabels[A.rows() + col] = bestCluster;
+                }
+
+                clusterer.setPredictorLabels(transformedPredictorLabels);
             }
+
             clusterer.setPredictorLabels(transformedPredictorLabels);
             clusterer.setK(this.k);
-            System.out.println("generated predictor labels");
+            //System.out.println("generated predictor labels: " + Arrays.toString(transformedPredictorLabels));
         }
 
         //A_n has r rows and c columns. We are going to make a new data matrix Z
@@ -101,7 +151,7 @@ public class SpectralCoClusterPipeline implements BiclusteringPipeline {
             U = new SubMatrix(U, 0, to_skip, U.rows(), l+to_skip);
             V = new SubMatrix(V, 0, to_skip, V.rows(), l+to_skip);
         } catch(ArithmeticException e) {
-            System.out.println("cannot use VBGMM, dataset too small!");
+            // System.out.println("cannot use VBGMM, dataset too small!");
             return null;
         }
 

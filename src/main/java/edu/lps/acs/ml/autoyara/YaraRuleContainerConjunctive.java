@@ -105,10 +105,11 @@ public class YaraRuleContainerConjunctive
     @Override
     public String toString()
     {
+        removeRedundantConditions();
+
         StringBuilder sb = new StringBuilder();
         sb.append("rule ").append(name).append("\n");
         sb.append("{\n");
-        
         
         for(String comment : extraComments)
         {
@@ -377,6 +378,15 @@ public class YaraRuleContainerConjunctive
                 && block != null
                 && block != Character.UnicodeBlock.SPECIALS;
     }
+
+    public boolean isEmpty() {
+        if (signature_sets.isEmpty())
+            return true;
+
+
+
+        return false;
+    }
     
     public void appendRuleData() {
         outputDictionary.put("rule_string", toString());
@@ -398,5 +408,40 @@ public class YaraRuleContainerConjunctive
         }
         outputDictionary.put("conditions_min", this.min_counts);
         outputDictionary.put("conditions_max", max_counts);
+    }
+
+    /**
+     * Removes redundant conditions from signature_sets and min_counts.
+     * A condition is redundant if another condition would match the same or more files.
+     */
+    private void removeRedundantConditions() {
+        // Work with indices to safely remove from both lists
+        for (int i = signature_sets.size() - 1; i >= 0; i--) {
+            Set<SigCandidate> current = signature_sets.get(i);
+            int currentCount = min_counts.get(i);
+
+            // Check if this condition is made redundant by any other condition
+            boolean isRedundant = false;
+            for (int j = 0; j < signature_sets.size(); j++) {
+                if (i == j) continue;
+
+                Set<SigCandidate> other = signature_sets.get(j);
+                int otherCount = min_counts.get(j);
+
+                // If other contains subset of signatures and requires fewer matches,
+                // then current is redundant
+                if (current.containsAll(other) &&
+                        otherCount <= currentCount &&
+                        otherCount <= other.size()) {
+                    isRedundant = true;
+                    break;
+                }
+            }
+
+            if (isRedundant) {
+                signature_sets.remove(i);
+                min_counts.remove(i);
+            }
+        }
     }
 }

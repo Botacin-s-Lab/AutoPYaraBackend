@@ -7,11 +7,8 @@ import jsat.linear.Vec;
 import java.util.*;
 
 public class AugmentedKMeansClusterer extends ClusteringAlgorithm {
-    public double alpha; // Corruption level parameter
-
     public AugmentedKMeansClusterer(int k) {
         this.k = k;
-        this.alpha = 0.1; // Can be made configurable
         this.requirePredictorLabel = true;
     }
 
@@ -19,10 +16,21 @@ public class AugmentedKMeansClusterer extends ClusteringAlgorithm {
     public BiclusteringOutput cluster(SimpleDataSet sigDataset, SimpleDataSet Z) {
         BiclusteringOutput output = new BiclusteringOutput();
         Matrix A = Z.getDataMatrix();
+
+        double[][] bestCentroids = computeCentroids(A);
+        int[] joint_designations = assignToClusters(A, bestCentroids);
+
+        // Create final output
+        createAssignments(sigDataset, Z, output, joint_designations, k);
+        output.k_used = k;
+
+        return output;
+    }
+
+    protected double[][] computeCentroids(Matrix A) {
+        // System.out.println("begin augmented clustering of matrix A with " + n + " rows and " + d + " columns");
         int n = A.rows();
         int d = A.cols();
-
-        // System.out.println("begin augmented clustering of matrix A with " + n + " rows and " + d + " columns");
 
         // Step 1: Create Yi sets based on predictor labels
         List<List<Integer>> Yi = new ArrayList<>(k);
@@ -51,36 +59,47 @@ public class AugmentedKMeansClusterer extends ClusteringAlgorithm {
             System.out.print("\n");
         } */
 
-        // Step 2-4: Run CRDEST for each coordinate of each Yi
-        double[][] centroids = new double[k][d];
+        double[][] bestCentroids = null;
+        double designation_cost = -1;
+        double bestAlpha = 0;
+        for (double alpha = 1; alpha <= 15; alpha++) { // alpha is Corruption level parameter, the original paper says to use the highest performing alpha from 0.01 to 0.15 in increments of 0.01
+            // Step 2-4: Run CRDEST for each coordinate of each Yi
+            double[][] centroids = new double[k][d];
 
-        for (int i = 0; i < k; i++) {
-            List<Integer> points = Yi.get(i);
-            if (points.isEmpty()) continue;
+            for (int i = 0; i < k; i++) {
+                List<Integer> points = Yi.get(i);
+                if (points.isEmpty()) continue;
 
-            // System.out.println("testing C = " + i);
-            // For each coordinate/feature
-            for (int j = 0; j < d; j++) {
-                // Extract the j-th coordinate values for points in Yi
+                // System.out.println("testing C = " + i);
+                // For each coordinate/feature
+                for (int j = 0; j < d; j++) {
+                    // Extract the j-th coordinate values for points in Yi
 
-                // System.out.println("extracting coords for features Y = " + j);
-                double[] coords = new double[points.size()];
-                int idx = 0;
-                for (int pointIdx : points) {
-                    coords[idx++] = A.get(pointIdx, j);
+                    // System.out.println("extracting coords for features Y = " + j);
+                    double[] coords = new double[points.size()];
+                    int idx = 0;
+                    for (int pointIdx : points) {
+                        coords[idx++] = A.get(pointIdx, j);
+                    }
+
+                    // System.out.println("running coord estimation");
+                    // Run CRDEST
+                    double coordEstimate = runCRDEST(coords, alpha / 100);
+                    // System.out.println("coord estimation done, crdest = " + coordEstimate);
+                    centroids[i][j] = coordEstimate;
                 }
+            }
 
-                // System.out.println("running coord estimation");
-                // Run CRDEST
-                double coordEstimate = runCRDEST(coords, this.alpha);
-                // System.out.println("coord estimation done, crdest = " + coordEstimate);
-                centroids[i][j] = coordEstimate;
+            // Convert centroids to cluster assignments
+            double cost = getCost(A, centroids);
+
+
+            if (bestCentroids == null || cost < designation_cost) {
+                bestCentroids = centroids;
+                designation_cost = cost;
+                bestAlpha = alpha;
             }
         }
-
-        // Convert centroids to cluster assignments
-        int[] joint_designations = assignToClusters(A, centroids);
-        System.out.println("augmented kmeans joint designation " + Arrays.toString(joint_designations));
 
         /*for (int i = 0; i < k; i++) {
             // For each coordinate/feature
@@ -89,15 +108,12 @@ public class AugmentedKMeansClusterer extends ClusteringAlgorithm {
             }
             System.out.print("\n");
         }*/
+        // System.out.println("augmented kmeans best alpha = " + bestAlpha);
 
-        // Create final output
-        createAssignments(sigDataset, Z, output, joint_designations, k);
-        output.k_used = k;
-
-        return output;
+        return bestCentroids;
     }
 
-    private double runCRDEST(double[] dimensionCoordinates, double alpha) {
+    protected double runCRDEST(double[] dimensionCoordinates, double alpha) {
         // Note: dimensionCoordinates must never be empty
 
         int m = dimensionCoordinates.length / 2;
@@ -121,6 +137,10 @@ public class AugmentedKMeansClusterer extends ClusteringAlgorithm {
             // Step 2: Find shortest interval I containing m(1-5α) points of X1
             Collections.sort(X1);
             int windowSize = (int)(m * (1 - 5 * alpha));
+            if (windowSize > X1.size())
+                windowSize = X1.size();
+            if (windowSize <= 0)
+                windowSize = 1;
 
             double minInterval = Double.MAX_VALUE;
             double intervalStart = X1.get(0);
@@ -157,7 +177,7 @@ public class AugmentedKMeansClusterer extends ClusteringAlgorithm {
         return sum / Z.size();
     }
 
-    private int[] assignToClusters(Matrix A, double[][] centroids) {
+    protected int[] assignToClusters(Matrix A, double[][] centroids) {
         int[] assignments = new int[A.rows()];
 
         for (int i = 0; i < A.rows(); i++) {
@@ -181,5 +201,29 @@ public class AugmentedKMeansClusterer extends ClusteringAlgorithm {
         }
 
         return assignments;
+    }
+
+    protected double getCost(Matrix A, double[][] centroids) {
+        double cost = 0;
+
+        for (int i = 0; i < A.rows(); i++) {
+            double minDist = Double.MAX_VALUE;
+
+            for (int j = 0; j < centroids.length; j++) {
+                double dist = 0;
+                for (int d = 0; d < A.cols(); d++) {
+                    double diff = A.get(i, d) - centroids[j][d];
+                    dist += diff * diff;
+                }
+
+                if (dist < minDist) {
+                    minDist = dist;
+                }
+            }
+
+            cost += minDist;
+        }
+
+        return cost;
     }
 }
