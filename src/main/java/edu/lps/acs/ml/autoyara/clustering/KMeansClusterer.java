@@ -3,6 +3,7 @@ package edu.lps.acs.ml.autoyara.clustering;
 import jsat.SimpleDataSet;
 import jsat.clustering.kmeans.NaiveKMeans;
 import jsat.linear.Matrix;
+import jsat.linear.Vec;
 import jsat.utils.IntList;
 import jsat.linear.distancemetrics.EuclideanDistance;
 

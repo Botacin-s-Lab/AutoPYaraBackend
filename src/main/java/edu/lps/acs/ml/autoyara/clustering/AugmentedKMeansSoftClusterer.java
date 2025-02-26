@@ -20,7 +20,7 @@ public class AugmentedKMeansSoftClusterer extends AugmentedKMeansClusterer {
 
         // Create final output
         createMixtureAssignments(sigDataset, Z, output, mixtureAssignment, this.k);
-        output.k_used = k;
+        output.k_used = this.k;
 
         return output;
     }
