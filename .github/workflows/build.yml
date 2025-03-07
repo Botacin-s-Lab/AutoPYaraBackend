@@ -64,7 +64,9 @@ jobs:
       with:
         repository: Botacin-s-Lab/AutoPYara
         token: ${{ secrets.GITHUB_TOKEN }}
+        ref: main 
         path: frontend
+
 
     - name: Initialize submodule in frontend
       run: git submodule update --init --recursive
