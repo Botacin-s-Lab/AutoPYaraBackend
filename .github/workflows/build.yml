@@ -1,4 +1,4 @@
-name: Java CI with Maven
+name: Java CI with Maven and Update Frontend Submodule
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
+    - name: Checkout backend code
       uses: actions/checkout@v3
 
     - name: Set up JDK 17
@@ -58,3 +58,28 @@ jobs:
         asset_path: target/AutoYara-1.0-SNAPSHOT.jar
         asset_name: AutoYara-1.0-SNAPSHOT-${{ env.RELEASE_TAG }}.jar
         asset_content_type: application/java-archive
+
+    - name: Checkout frontend repository
+      uses: actions/checkout@v3
+      with:
+        repository: Botacin-s-Lab/AutoPYara
+        token: ${{ secrets.GITHUB_TOKEN }}
+        path: frontend
+
+    - name: Initialize submodule in frontend
+      run: git submodule update --init --recursive
+
+    - name: Create folder for JAR file in frontend
+      run: |
+        mkdir -p frontend/JARs  # Create the folder if it doesn't exist
+
+    - name: Copy JAR file to frontend folder
+      run: |
+        cp target/AutoYara-1.0-SNAPSHOT-${{ env.RELEASE_TAG }}.jar frontend/JARs/AutoYara-${{ env.RELEASE_TAG }}.jar
+
+    - name: Commit changes to frontend repository
+      run: |
+        cd frontend
+        git add JARs/AutoYara-${{ env.RELEASE_TAG }}.jar
+        git commit -m "Update JAR release to ${{ env.RELEASE_TAG }}"
+        git push origin main
