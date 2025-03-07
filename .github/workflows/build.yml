@@ -1,4 +1,4 @@
-name: Java CI with Maven and Update Frontend Submodule
+name: Java CI with Maven
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout backend code
+    - name: Checkout code
       uses: actions/checkout@v3
 
     - name: Set up JDK 17
@@ -36,7 +36,7 @@ jobs:
         git push origin ${{ env.RELEASE_TAG }}
 
     - name: Create GitHub Release
-      id: create_release  # Capture the output of this step
+      id: create_release
       uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -54,34 +54,29 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}  # Pass the upload URL
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: target/AutoYara-1.0-SNAPSHOT.jar
         asset_name: AutoYara-1.0-SNAPSHOT-${{ env.RELEASE_TAG }}.jar
         asset_content_type: application/java-archive
 
-    - name: Checkout frontend repository
-      uses: actions/checkout@v3
-      with:
-        repository: Botacin-s-Lab/AutoPYara
-        token: ${{ secrets.GITHUB_TOKEN }}
-        ref: main 
-        path: frontend
-
-
-    - name: Initialize submodule in frontend
-      run: git submodule update --init --recursive
-
-    - name: Create folder for JAR file in frontend
+    - name: Checkout target repository (AutoPyYara)
       run: |
-        mkdir -p frontend/JARs  # Create the folder if it doesn't exist
+        git clone https://x-access-token:${{ secrets.TARGET_REPO_TOKEN }}@github.com/Botacin-s-Lab/AutoPyYara.git
+      env:
+        TARGET_REPO_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
 
-    - name: Copy JAR file to frontend folder
+    - name: Copy JAR file to AutoPyYara repo
       run: |
-        cp target/AutoYara-1.0-SNAPSHOT-${{ env.RELEASE_TAG }}.jar frontend/JARs/AutoYara-${{ env.RELEASE_TAG }}.jar
+        mkdir -p AutoPyYara/jars
+        cp target/AutoYara-1.0-SNAPSHOT.jar AutoPyYara/jars/AutoYara-1.0-SNAPSHOT-${{ env.RELEASE_TAG }}.jar
 
-    - name: Commit changes to frontend repository
+    - name: Commit and push changes to AutoPyYara
       run: |
-        cd frontend
-        git add JARs/AutoYara-${{ env.RELEASE_TAG }}.jar
-        git commit -m "Update JAR release to ${{ env.RELEASE_TAG }}"
-        git push origin main
+        cd AutoPyYara
+        git config user.name "GitHub Action"
+        git config user.email "action@github.com"
+        git add jars/AutoYara-1.0-SNAPSHOT-${{ env.RELEASE_TAG }}.jar
+        git commit -m "Add JAR file from AutoPYaraBackend - ${{ env.RELEASE_TAG }}"
+        git push
+      env:
+        TARGET_REPO_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
