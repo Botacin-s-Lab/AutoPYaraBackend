@@ -118,7 +118,7 @@ public class ClusteringAlgorithm {
                 // Calculate membership using the fuzzy c-means formula
                 for (int j = 0; j < k; j++) {
                     double ratio = distances[c] / distances[j];
-                    membership += Math.pow(ratio, 1.0 / (m - 1));
+                    membership += Math.pow(ratio, 2.0 / (m - 1));
                 }
                 if (membership != 0.0) {
                     mixtureAssignment[i][c] = 1.0 / membership;
