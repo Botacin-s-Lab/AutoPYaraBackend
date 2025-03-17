@@ -10,7 +10,7 @@ import java.util.stream.IntStream;
 import java.util.List;
 
 public class KMeansSoftClusterer extends KMeansClusterer {
-    public double m = 2; // fuzzy parameter
+    public double m = 3; // fuzzy parameter
 
     public KMeansSoftClusterer(int k) {
         super(k);
