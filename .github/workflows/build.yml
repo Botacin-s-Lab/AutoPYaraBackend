@@ -1,0 +1,82 @@
+name: Java CI with Maven
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Allows manual trigger
+
+permissions:
+  contents: write  # Grants write access to the repository
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Build with Maven
+      run: mvn -B package
+
+    - name: Get current date
+      id: date
+      run: echo "RELEASE_TAG=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
+
+    - name: Create GitHub Tag
+      run: |
+        git tag ${{ env.RELEASE_TAG }}
+        git push origin ${{ env.RELEASE_TAG }}
+
+    - name: Create GitHub Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ env.RELEASE_TAG }}
+        release_name: "Release ${{ env.RELEASE_TAG }}"
+        draft: false
+        prerelease: false
+
+    - name: List files in target directory
+      run: ls -la target
+
+    - name: Upload JAR file to Release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: target/AutoYara-1.0-SNAPSHOT.jar
+        asset_name: AutoYara-1.0-SNAPSHOT-${{ env.RELEASE_TAG }}.jar
+        asset_content_type: application/java-archive
+
+    - name: Checkout target repository (AutoPyYara)
+      run: |
+        git clone https://x-access-token:${{ secrets.TARGET_REPO_TOKEN }}@github.com/Botacin-s-Lab/AutoPyYara.git
+      env:
+        TARGET_REPO_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
+
+    - name: Copy JAR file to AutoPyYara repo
+      run: |
+        mkdir -p AutoPyYara/jars
+        cp target/AutoYara-1.0-SNAPSHOT.jar AutoPyYara/jars/AutoYara.jar
+
+    - name: Commit and push changes to AutoPyYara
+      run: |
+        cd AutoPyYara
+        git config user.name "GitHub Action"
+        git config user.email "action@github.com"
+        git add jars/AutoYara.jar
+        git commit -m "Add renamed JAR file from AutoPYaraBackend - ${{ env.RELEASE_TAG }}"
+        git push
+      env:
+        TARGET_REPO_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
