@@ -28,14 +28,23 @@ The split matters: the **ssdeep + DBSCAN pre-clustering** lives on the Python si
 
 ## Provenance and credits
 
-This project builds on **AutoYara** (Raff et al., *"Automatic Yara Rule Generation Using Biclustering"*, AISec 2020) — visible in the retained package namespace `edu.lps.acs.ml.autoyara` and the `AutoYara` Maven artifact ID. The original CLI (`AutoYaraCluster`), Bloom filter machinery, and biclustering-based rule construction derive from that work.
+This project is a **derivative of [AutoYara](https://github.com/FutureComputing4AI/AutoYara)**, which is licensed under the **Apache License 2.0**. We took that codebase and redesigned it; the retained package namespace `edu.lps.acs.ml.autoyara` and the `AutoYara` Maven artifact ID reflect that lineage.
 
-Contributions original to this repository are principally:
+> Edward Raff, Richard Zak, Gary Lopez Munoz, William Fleming, Hyrum S. Anderson, Bobby Filar, Charles Nicholas, and James Holt.
+> **"Automatic Yara Rule Generation Using Biclustering."** *13th ACM Workshop on Artificial Intelligence and Security (AISec '20)*, 2020.
+> [doi:10.1145/3411508.3421372](https://doi.org/10.1145/3411508.3421372) · [arXiv:2009.03779](https://arxiv.org/abs/2009.03779)
+
+**8 files derive from upstream** (all modified here): `AutoYaraCluster`, `Bytes2Bloom`, `CountingBloom`, `CountingBloomInfo`, `SigCandidate`, `SpectralCoClusteringVBMM`, `YaraRuleContainerConjunctive`, and `Version`. These carry the Apache 2.0 licence of the original.
+
+**12 files are original to this repository:**
 
 - `AutoYaraPython` — a dedicated JPype-facing API and result-dictionary output
-- The `clustering/` package — an abstraction over clustering strategies
-- `AugmentedKMeansClusterer` / `AugmentedKMeansSoftClusterer` — robust, predictor-label-seeded centroid estimation
-- Soft (fuzzy-membership) clustering variants and the `PYara` candidate-selection heuristic
+- `MemoryMonitor`
+- The entire `clustering/` package — a pluggable clustering-strategy abstraction, the VBGMM/KMeans/soft/random strategies, and the biclustering pipeline
+- `AugmentedKMeansClusterer` / `AugmentedKMeansSoftClusterer` — robust, predictor-label-seeded centroid estimation via CRDEST
+- (plus the `PYara` candidate-selection heuristic, added within the derived files)
+
+See [`NOTICE`](NOTICE) for the full attribution, the per-file breakdown, and a summary of the changes made to the derived files. The Apache 2.0 licence text is in [`LICENSE-Apache-2.0`](LICENSE-Apache-2.0).
 
 Third-party dependencies:
 
@@ -46,7 +55,7 @@ Third-party dependencies:
 | `me.tongfei:progressbar` | Terminal progress bars |
 | `dk.brics:automaton` | Automaton/regex primitives |
 
-> **Note for maintainers:** the `LICENSE` here is MIT © Marcus Botacin. Because this is a derivative of upstream AutoYara, the upstream repository link, its license, and its copyright notice should be explicitly cited in this file and retained per that license's terms. Worth confirming before any formal (e.g. artifact-evaluation or archival) release.
+> **Licensing note.** `LICENSE` (MIT © Marcus Botacin) covers the original contributions listed above. The 8 upstream-derived files remain under the Apache License 2.0 — see [`NOTICE`](NOTICE) and [`LICENSE-Apache-2.0`](LICENSE-Apache-2.0). Apache 2.0 permits redistribution under these terms provided attribution and the licence text are retained and modifications are disclosed, which is what those two files do.
 
 ## Repository layout
 

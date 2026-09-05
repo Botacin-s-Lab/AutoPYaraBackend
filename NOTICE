@@ -1,0 +1,85 @@
+AutoPYara Backend
+Copyright (c) 2024 Marcus Botacin
+
+================================================================================
+Upstream attribution
+================================================================================
+
+This product includes and is derived from software developed as part of the
+AutoYara project:
+
+    AutoYara
+    https://github.com/FutureComputing4AI/AutoYara
+    Licensed under the Apache License, Version 2.0
+
+    Described in:
+      Edward Raff, Richard Zak, Gary Lopez Munoz, William Fleming,
+      Hyrum S. Anderson, Bobby Filar, Charles Nicholas, James Holt.
+      "Automatic Yara Rule Generation Using Biclustering."
+      Proceedings of the 13th ACM Workshop on Artificial Intelligence and
+      Security (AISec '20), 2020.
+      https://doi.org/10.1145/3411508.3421372
+      https://arxiv.org/abs/2009.03779
+
+A copy of the Apache License, Version 2.0 is provided in the file
+LICENSE-Apache-2.0 in this repository.
+
+The Java package namespace `edu.lps.acs.ml.autoyara` and the Maven artifact
+ID `AutoYara` are retained from that upstream project.
+
+--------------------------------------------------------------------------------
+Files derived from upstream AutoYara (Apache License 2.0)
+--------------------------------------------------------------------------------
+
+The following files originate in the upstream AutoYara project and have been
+modified in this repository:
+
+    src/main/java/edu/lps/acs/ml/autoyara/AutoYaraCluster.java
+    src/main/java/edu/lps/acs/ml/autoyara/Bytes2Bloom.java
+    src/main/java/edu/lps/acs/ml/autoyara/CountingBloom.java
+    src/main/java/edu/lps/acs/ml/autoyara/CountingBloomInfo.java
+    src/main/java/edu/lps/acs/ml/autoyara/SigCandidate.java
+    src/main/java/edu/lps/acs/ml/autoyara/SpectralCoClusteringVBMM.java
+    src/main/java/edu/lps/acs/ml/autoyara/YaraRuleContainerConjunctive.java
+    src/main/java-templates/edu/lps/acs/ml/autoyara/Version.java
+
+Changes made to these files include refactoring the clustering step behind a
+pluggable strategy interface, extending the rule-construction pipeline to emit
+a structured result dictionary rather than a single rule, adding candidate
+caching, and adding an alternative candidate-selection heuristic.
+
+--------------------------------------------------------------------------------
+Files original to this repository
+--------------------------------------------------------------------------------
+
+The following files are original work of this project and are not derived from
+upstream AutoYara:
+
+    src/main/java/edu/lps/acs/ml/autoyara/AutoYaraPython.java
+    src/main/java/edu/lps/acs/ml/autoyara/MemoryMonitor.java
+    src/main/java/edu/lps/acs/ml/autoyara/clustering/AugmentedKMeansClusterer.java
+    src/main/java/edu/lps/acs/ml/autoyara/clustering/AugmentedKMeansSoftClusterer.java
+    src/main/java/edu/lps/acs/ml/autoyara/clustering/BiclusteringOutput.java
+    src/main/java/edu/lps/acs/ml/autoyara/clustering/BiclusteringPipeline.java
+    src/main/java/edu/lps/acs/ml/autoyara/clustering/ClusteringAlgorithm.java
+    src/main/java/edu/lps/acs/ml/autoyara/clustering/KMeansClusterer.java
+    src/main/java/edu/lps/acs/ml/autoyara/clustering/KMeansSoftClusterer.java
+    src/main/java/edu/lps/acs/ml/autoyara/clustering/RandomClusterer.java
+    src/main/java/edu/lps/acs/ml/autoyara/clustering/SpectralCoClusterPipeline.java
+    src/main/java/edu/lps/acs/ml/autoyara/clustering/VBGMMClusterer.java
+
+================================================================================
+Third-party dependencies
+================================================================================
+
+    JSAT (Java Statistical Analysis Tool)
+    https://github.com/EdwardRaff/JSAT
+
+    KiloGrams
+    https://github.com/gnat-n/KiloGrams
+
+    me.tongfei:progressbar
+    dk.brics:automaton
+
+These are resolved at build time by Maven and are not redistributed in source
+form in this repository. Their respective licenses apply.
