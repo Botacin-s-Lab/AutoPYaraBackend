@@ -1,7 +1,13 @@
 /*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
+ * Derived from the AutoYara project:
+ *     https://github.com/FutureComputing4AI/AutoYara
+ *
+ * Copyright the AutoYara authors. Licensed under the Apache License,
+ * Version 2.0 (the "License"); you may not use this file except in
+ * compliance with the License. A copy is provided in LICENSE-Apache-2.0.
+ *
+ * This file has been modified as part of AutoPYaraBackend by Botacin's Lab.
+ * See NOTICE for a summary of the modifications.
  */
 package edu.lps.acs.ml.autoyara;
 

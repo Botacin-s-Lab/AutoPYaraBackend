@@ -1,3 +1,9 @@
+/*
+ * Part of AutoPYaraBackend.
+ * Copyright (c) 2026 Botacin's Lab. Licensed under the MIT License; see LICENSE.
+ *
+ * Original work -- not derived from upstream AutoYara. See NOTICE.
+ */
 package edu.lps.acs.ml.autoyara.clustering;
 
 import edu.lps.acs.ml.autoyara.clustering.BiclusteringOutput;

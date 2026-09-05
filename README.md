@@ -55,7 +55,7 @@ Third-party dependencies:
 | `me.tongfei:progressbar` | Terminal progress bars |
 | `dk.brics:automaton` | Automaton/regex primitives |
 
-> **Licensing note.** `LICENSE` (MIT © Marcus Botacin) covers the original contributions listed above. The 8 upstream-derived files remain under the Apache License 2.0 — see [`NOTICE`](NOTICE) and [`LICENSE-Apache-2.0`](LICENSE-Apache-2.0). Apache 2.0 permits redistribution under these terms provided attribution and the licence text are retained and modifications are disclosed, which is what those two files do.
+> **Licensing note.** [`LICENSE`](LICENSE) (MIT © 2026 Botacin's Lab) covers the original contributions listed above. The 8 upstream-derived files remain under the **Apache License 2.0** — see [`NOTICE`](NOTICE) and [`LICENSE-Apache-2.0`](LICENSE-Apache-2.0). Every source file carries a header stating which of the two applies to it.
 
 ## Repository layout
 
