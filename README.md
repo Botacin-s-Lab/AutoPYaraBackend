@@ -121,7 +121,7 @@ The intent is centroids that resist outliers and noise in the byte-signature fea
 mvn -B package
 ```
 
-Output: `target/AutoYara-1.0-SNAPSHOT.jar` — a **shaded fat jar** (`maven-shade-plugin`, `minimizeJar=true`) bundling all dependencies, with `Main-Class: edu.lps.acs.ml.autoyara.AutoYaraCluster`.
+Output: `target/AutoYara-<version>.jar` (e.g. `AutoYara-1.0.0.jar`) — a **shaded fat jar** (`maven-shade-plugin`, `minimizeJar=true`) bundling all dependencies, with `Main-Class: edu.lps.acs.ml.autoyara.AutoYaraCluster`.
 
 Some dependencies resolve through [JitPack](https://jitpack.io), declared as a repository in `pom.xml`; the first build will reach out to it.
 
@@ -140,7 +140,7 @@ To test a locally built jar against the Python package, copy it over `autopyara/
 ### Command line
 
 ```bash
-java -jar target/AutoYara-1.0-SNAPSHOT.jar \
+java -jar target/AutoYara-1.0.0.jar \
     --input-dir  /path/to/malware/samples \
     --benign     /path/to/benign-bytes \
     --malicious  /path/to/malicious-bytes \
@@ -171,7 +171,7 @@ Selected options (see `AutoYaraCluster` for the full set):
 `Bytes2Bloom` builds the counting Bloom filters that the rule generator filters candidates against:
 
 ```bash
-java -cp target/AutoYara-1.0-SNAPSHOT.jar \
+java -cp target/AutoYara-1.0.0.jar \
     edu.lps.acs.ml.autoyara.Bytes2Bloom \
     -i /corpus/benign -o /output/benign-bytes
 ```
@@ -220,22 +220,35 @@ Read back from Java: `targets` (resolved input paths) and the `pythonRun()` resu
 | `build` | Every push to `main` | `mvn -B package` on Temurin JDK 17; uploads the jar as a workflow artifact |
 | `release` | Only when `gate` says so | Tags the commit, creates a GitHub Release, attaches the jar |
 
-**Every push compiles**, so breakage is caught immediately. A **release is only cut when you ask for one**, in either of two ways:
+**Every push compiles**, so breakage is caught immediately. Everything beyond that is opt-in, driven by the head commit's **subject line** (case-insensitive; spaced and unspaced spellings both work):
 
-- Push a commit whose **subject line** contains `NewVersion` or `New version` (case-insensitive; both spellings are accepted).
-- Run the workflow manually from the Actions tab with the **`release`** input checked.
+| Put this in the commit subject | Effect |
+|---|---|
+| `NewVersion` / `New version` | Release with a **minor** bump — `1.0.5` → `1.1.0` |
+| `NewSubversion` / `New subversion` | Release with a **patch** bump — `1.0.5` → `1.0.6` |
+| `pip sync` | Rebuild the jar and push it into `AutoPYaraPyPI/autopyara/jars/AutoYara.jar` |
 
-Only the first line of the commit message is examined — a commit *body* that merely mentions the phrase will not trigger a release.
+The triggers are **combinable** — a subject like `NewVersion + pip sync` cuts release `1.1.0` *and* propagates that exact jar to the Python package. The same actions are available from the Actions tab via **Run workflow**, which exposes `release`, `bump`, and `sync` inputs.
 
-Releases are tagged `yyyyMMddHHmmss` and carry `AutoYara-1.0-SNAPSHOT-<timestamp>.jar`, downloadable from the [Releases page](https://github.com/Botacin-s-Lab/AutoPYaraBackend/releases). The release notes record the **commit SHA** the jar was built from, so any published jar can be traced back to its source.
+Only the **first line** of the commit message is examined. A commit *body* that merely mentions a trigger phrase will not fire it.
 
-> **Note:** the jar is not automatically propagated into [AutoPYaraPyPI](https://github.com/Botacin-s-Lab/AutoPYaraPyPI) — updating `autopyara/jars/AutoYara.jar` there is currently a manual step. (An earlier version of this workflow attempted a cross-repository push to a repository named `AutoPyYara`, which no longer exists; that step failed on every run and has been removed.)
+### Versioning
+
+The project follows semantic versioning, starting at **1.0.0**, with `pom.xml` bumped automatically by [`.github/scripts/bump_pom_version.py`](.github/scripts/bump_pom_version.py). Releases are tagged `vX.Y.Z` and carry `AutoYara-X.Y.Z.jar`, downloadable from the [Releases page](https://github.com/Botacin-s-Lab/AutoPYaraBackend/releases); the release notes record the **commit SHA** the jar was built from.
+
+The release job publishes the current `pom.xml` version as-is if it has never been tagged, and bumps first otherwise — so a version is never published twice, and the very first release lands cleanly on `1.0.0`. Bump `<version>` in `pom.xml` by hand only for a major release.
+
+### Syncing the jar to the Python package
+
+A `pip sync` commit rebuilds the jar and commits it to `AutoPYaraPyPI`. It updates **only** the jar — it deliberately does not rebuild or re-release the Python package, and the sync commit's subject is chosen so it cannot trip that repository's PyPI release pipeline.
+
+> **Requires a `TARGET_REPO_TOKEN` secret** on this repository: a *classic* PAT with `repo` scope, owned by an account holding the **Repository admin** role on `AutoPYaraPyPI` (that repo's `main` ruleset requires a bypass-capable actor to push). Fine-grained tokens are rejected by the ruleset. The sync job fails with an explicit message if the secret is absent.
 
 ## Known limitations
 
 - **Nondeterministic output.** `AugmentedKMeansClusterer.runCRDEST()` uses an unseeded `new Random()` for its `X₁`/`X₂` partition (`AugmentedKMeansClusterer.java:122`); a `setSeed(0L)` call sits commented out on the next line. `RandomClusterer` is likewise unseeded. Repeated runs on identical inputs can therefore produce different centroids and different rules. Exposing a configurable seed would make results reproducible.
 - **No automated tests.** There is no test suite; the `test` file at the repository root is an unrelated 5-byte stray file.
-- **Version is fixed at `1.0-SNAPSHOT`.** Releases are distinguished only by their timestamp tag, so a jar's *filename* does not identify its source commit. The release notes record the commit SHA, which covers traceability in practice, but adopting real semantic versions in `pom.xml` would be cleaner.
+- **The jar is not rebuilt when only the Python package changes.** Propagation is one-directional and on demand: a `pip sync` commit here pushes a jar into `AutoPYaraPyPI`, but nothing pulls the other way.
 
 ## License
 
