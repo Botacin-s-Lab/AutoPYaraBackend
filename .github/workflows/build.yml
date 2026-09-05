@@ -1,82 +1,121 @@
 name: Java CI with Maven
 
+# Every push to main compiles the project (cheap breakage check).
+# A GitHub Release with the built jar is cut ONLY when the head commit's
+# SUBJECT line asks for one -- "NewVersion" or "New version"
+# (case-insensitive, both spellings accepted) -- or when this workflow is
+# dispatched manually with the `release` input checked.
+#
+# Only the first line of the commit message is inspected. Matching the whole
+# message means a commit body that merely *describes* the trigger phrase
+# fires a release by accident; that has already happened once in the sibling
+# AutoPYaraPyPI repository.
 on:
   push:
     branches:
       - main
-  workflow_dispatch:  # Allows manual trigger
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Cut a release (tag + GitHub Release with the built jar)"
+        type: boolean
+        default: false
 
 permissions:
-  contents: write  # Grants write access to the repository
+  contents: write # create tags and releases
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+    steps:
+      - name: Decide whether a release was requested
+        id: check
+        env:
+          # Passed via env rather than interpolated into the script body, so a
+          # crafted commit message cannot inject shell commands here.
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          MANUAL_RELEASE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release == 'true' }}
+        run: |
+          if [[ "$MANUAL_RELEASE" == "true" ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch requested a release."
+            exit 0
+          fi
+
+          SUBJECT=$(printf '%s' "$COMMIT_MSG" | head -n1 | tr '[:upper:]' '[:lower:]')
+          if [[ "$SUBJECT" == *"newversion"* || "$SUBJECT" == *"new version"* ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "Commit subject requests a release -> will publish a jar."
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "No release trigger in commit subject -> build only."
+          fi
+
   build:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v3
-      with:
-        distribution: 'temurin'
-        java-version: '17'
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
 
-    - name: Build with Maven
-      run: mvn -B package
+      - name: Build with Maven
+        run: mvn -B package
 
-    - name: Get current date
-      id: date
-      run: echo "RELEASE_TAG=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
+      # Hand the exact built jar to the release job, so what gets published is
+      # the artifact that was actually built here rather than a rebuild.
+      - name: Upload jar as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: autoyara-jar
+          path: target/AutoYara-*.jar
+          if-no-files-found: error
 
-    - name: Create GitHub Tag
-      run: |
-        git tag ${{ env.RELEASE_TAG }}
-        git push origin ${{ env.RELEASE_TAG }}
+  release:
+    needs: [gate, build]
+    if: needs.gate.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-    - name: Create GitHub Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ env.RELEASE_TAG }}
-        release_name: "Release ${{ env.RELEASE_TAG }}"
-        draft: false
-        prerelease: false
+      - name: Download the jar built by the build job
+        uses: actions/download-artifact@v4
+        with:
+          name: autoyara-jar
+          path: dist
 
-    - name: List files in target directory
-      run: ls -la target
+      - name: Create the tag, release, and attach the jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="$(date +'%Y%m%d%H%M%S')"
+          JAR="$(ls dist/AutoYara-*.jar | head -1)"
+          ASSET="dist/AutoYara-1.0-SNAPSHOT-${TAG}.jar"
+          [ "$JAR" = "$ASSET" ] || cp "$JAR" "$ASSET"
 
-    - name: Upload JAR file to Release
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: target/AutoYara-1.0-SNAPSHOT.jar
-        asset_name: AutoYara-1.0-SNAPSHOT-${{ env.RELEASE_TAG }}.jar
-        asset_content_type: application/java-archive
+          # Built with printf so no YAML indentation leaks into the notes
+          # (4+ leading spaces would render as a code block on GitHub).
+          NOTES="$(printf '%s\n' \
+            "Automated build of \`${GITHUB_SHA}\` on \`${GITHUB_REF_NAME}\`." \
+            "" \
+            "Built with \`mvn -B package\` (Temurin JDK 17)." \
+            "" \
+            "Consumed by the [autopyara](https://pypi.org/project/autopyara/) Python package as \`autopyara/jars/AutoYara.jar\`.")"
 
-    - name: Checkout target repository (AutoPyYara)
-      run: |
-        git clone https://x-access-token:${{ secrets.TARGET_REPO_TOKEN }}@github.com/Botacin-s-Lab/AutoPyYara.git
-      env:
-        TARGET_REPO_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
-
-    - name: Copy JAR file to AutoPyYara repo
-      run: |
-        mkdir -p AutoPyYara/jars
-        cp target/AutoYara-1.0-SNAPSHOT.jar AutoPyYara/jars/AutoYara.jar
-
-    - name: Commit and push changes to AutoPyYara
-      run: |
-        cd AutoPyYara
-        git config user.name "GitHub Action"
-        git config user.email "action@github.com"
-        git add jars/AutoYara.jar
-        git commit -m "Add renamed JAR file from AutoPYaraBackend - ${{ env.RELEASE_TAG }}"
-        git push
-      env:
-        TARGET_REPO_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
+          # gh creates the tag at the checked-out commit as part of this call.
+          # The commit SHA goes in the notes so a published jar can always be
+          # traced back to the source it was built from -- the pom version is
+          # a fixed 1.0-SNAPSHOT and cannot serve that purpose.
+          gh release create "$TAG" "$ASSET" \
+            --title "Release $TAG" \
+            --notes "$NOTES"

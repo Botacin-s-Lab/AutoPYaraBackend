@@ -212,22 +212,30 @@ Read back from Java: `targets` (resolved input paths) and the `pythonRun()` resu
 
 ## Continuous integration and releases
 
-[`.github/workflows/build.yml`](.github/workflows/build.yml) runs on every push to `main` (and on manual dispatch):
+[`.github/workflows/build.yml`](.github/workflows/build.yml) has three jobs:
 
-1. Builds with `mvn -B package` on Temurin JDK 17
-2. Tags the commit with a `yyyyMMddHHmmss` timestamp
-3. Creates a GitHub Release and attaches `AutoYara-1.0-SNAPSHOT-<timestamp>.jar`
-4. Copies the jar into a downstream repository
+| Job | When it runs | What it does |
+|---|---|---|
+| `gate` | Every push to `main`, and manual dispatch | Decides whether a release was requested |
+| `build` | Every push to `main` | `mvn -B package` on Temurin JDK 17; uploads the jar as a workflow artifact |
+| `release` | Only when `gate` says so | Tags the commit, creates a GitHub Release, attaches the jar |
 
-Built jars are downloadable from the [Releases page](https://github.com/Botacin-s-Lab/AutoPYaraBackend/releases).
+**Every push compiles**, so breakage is caught immediately. A **release is only cut when you ask for one**, in either of two ways:
 
-> **Known CI defect:** step 4 targets a repository named `AutoPyYara`, which is no longer reachable, so that step fails and the whole workflow is marked failed — even though the build, tag, release, and jar upload all succeed. The jar is therefore **not** automatically propagated to [AutoPYaraPyPI](https://github.com/Botacin-s-Lab/AutoPYaraPyPI); that copy is currently manual. Repointing or removing that step would make the pipeline green and the jar's provenance automatic.
+- Push a commit whose **subject line** contains `NewVersion` or `New version` (case-insensitive; both spellings are accepted).
+- Run the workflow manually from the Actions tab with the **`release`** input checked.
+
+Only the first line of the commit message is examined — a commit *body* that merely mentions the phrase will not trigger a release.
+
+Releases are tagged `yyyyMMddHHmmss` and carry `AutoYara-1.0-SNAPSHOT-<timestamp>.jar`, downloadable from the [Releases page](https://github.com/Botacin-s-Lab/AutoPYaraBackend/releases). The release notes record the **commit SHA** the jar was built from, so any published jar can be traced back to its source.
+
+> **Note:** the jar is not automatically propagated into [AutoPYaraPyPI](https://github.com/Botacin-s-Lab/AutoPYaraPyPI) — updating `autopyara/jars/AutoYara.jar` there is currently a manual step. (An earlier version of this workflow attempted a cross-repository push to a repository named `AutoPyYara`, which no longer exists; that step failed on every run and has been removed.)
 
 ## Known limitations
 
 - **Nondeterministic output.** `AugmentedKMeansClusterer.runCRDEST()` uses an unseeded `new Random()` for its `X₁`/`X₂` partition (`AugmentedKMeansClusterer.java:122`); a `setSeed(0L)` call sits commented out on the next line. `RandomClusterer` is likewise unseeded. Repeated runs on identical inputs can therefore produce different centroids and different rules. Exposing a configurable seed would make results reproducible.
 - **No automated tests.** There is no test suite; the `test` file at the repository root is an unrelated 5-byte stray file.
-- **Version is fixed at `1.0-SNAPSHOT`.** Releases are distinguished only by their timestamp tag, so a given jar cannot be traced back to a source commit from its version string alone.
+- **Version is fixed at `1.0-SNAPSHOT`.** Releases are distinguished only by their timestamp tag, so a jar's *filename* does not identify its source commit. The release notes record the commit SHA, which covers traceability in practice, but adopting real semantic versions in `pom.xml` would be cleaner.
 
 ## License
 
