@@ -1,14 +1,20 @@
 name: Java CI with Maven
 
 # Every push to main compiles the project (cheap breakage check).
-# A GitHub Release with the built jar is cut ONLY when the head commit's
-# SUBJECT line asks for one -- "NewVersion" or "New version"
-# (case-insensitive, both spellings accepted) -- or when this workflow is
-# dispatched manually with the `release` input checked.
+# Two independent, combinable actions are driven by the head commit's SUBJECT
+# line (case-insensitive; the spaced and unspaced spellings both work):
 #
-# Only the first line of the commit message is inspected. Matching the whole
-# message means a commit body that merely *describes* the trigger phrase
-# fires a release by accident; that has already happened once in the sibling
+#   "NewVersion"    / "New version"     -> release, minor bump  (1.0.5 -> 1.1.0)
+#   "NewSubversion" / "New subversion"  -> release, patch bump  (1.0.5 -> 1.0.6)
+#   "pip sync"                          -> rebuild the jar and push it into
+#                                          AutoPYaraPyPI/autopyara/jars/
+#
+# A subject may contain both a release trigger and "pip sync"; they are
+# evaluated separately, and the synced jar is then the freshly released one.
+#
+# Only the FIRST LINE of the commit message is inspected. Matching the whole
+# message means a commit body that merely *describes* a trigger phrase fires
+# it by accident -- that has already happened once in the sibling
 # AutoPYaraPyPI repository.
 on:
   push:
@@ -20,9 +26,18 @@ on:
         description: "Cut a release (tag + GitHub Release with the built jar)"
         type: boolean
         default: false
+      bump:
+        description: "Version bump to apply when releasing"
+        type: choice
+        options: [patch, minor]
+        default: patch
+      sync:
+        description: "Push the built jar to AutoPYaraPyPI"
+        type: boolean
+        default: false
 
 permissions:
-  contents: write # create tags and releases
+  contents: write # create commits, tags and releases
 
 concurrency:
   group: build-${{ github.ref }}
@@ -33,28 +48,56 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
+      bump_type: ${{ steps.check.outputs.bump_type }}
+      should_sync: ${{ steps.check.outputs.should_sync }}
     steps:
-      - name: Decide whether a release was requested
+      - name: Decide what this push asked for
         id: check
         env:
           # Passed via env rather than interpolated into the script body, so a
           # crafted commit message cannot inject shell commands here.
           COMMIT_MSG: ${{ github.event.head_commit.message }}
-          MANUAL_RELEASE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release == 'true' }}
+          IS_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
+          DISPATCH_RELEASE: ${{ github.event.inputs.release }}
+          DISPATCH_BUMP: ${{ github.event.inputs.bump }}
+          DISPATCH_SYNC: ${{ github.event.inputs.sync }}
         run: |
-          if [[ "$MANUAL_RELEASE" == "true" ]]; then
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-            echo "Manual dispatch requested a release."
+          if [[ "$IS_DISPATCH" == "true" ]]; then
+            [[ "$DISPATCH_RELEASE" == "true" ]] \
+              && { echo "should_release=true"; echo "bump_type=${DISPATCH_BUMP:-patch}"; } >> "$GITHUB_OUTPUT" \
+              || { echo "should_release=false"; echo "bump_type="; } >> "$GITHUB_OUTPUT"
+            [[ "$DISPATCH_SYNC" == "true" ]] \
+              && echo "should_sync=true" >> "$GITHUB_OUTPUT" \
+              || echo "should_sync=false" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch: release=$DISPATCH_RELEASE bump=$DISPATCH_BUMP sync=$DISPATCH_SYNC"
             exit 0
           fi
 
           SUBJECT=$(printf '%s' "$COMMIT_MSG" | head -n1 | tr '[:upper:]' '[:lower:]')
-          if [[ "$SUBJECT" == *"newversion"* || "$SUBJECT" == *"new version"* ]]; then
+
+          # "newsubversion" is checked first. It contains "version" but NOT the
+          # substring "newversion" (no 'v' directly after "new"), so the two are
+          # mutually exclusive -- checking the more specific phrase first keeps
+          # that guarantee obvious.
+          if [[ "$SUBJECT" == *"newsubversion"* || "$SUBJECT" == *"new subversion"* ]]; then
             echo "should_release=true" >> "$GITHUB_OUTPUT"
-            echo "Commit subject requests a release -> will publish a jar."
+            echo "bump_type=patch" >> "$GITHUB_OUTPUT"
+            echo "Release requested: patch bump."
+          elif [[ "$SUBJECT" == *"newversion"* || "$SUBJECT" == *"new version"* ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "bump_type=minor" >> "$GITHUB_OUTPUT"
+            echo "Release requested: minor bump."
           else
             echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "No release trigger in commit subject -> build only."
+            echo "bump_type=" >> "$GITHUB_OUTPUT"
+            echo "No release trigger in commit subject."
+          fi
+
+          if [[ "$SUBJECT" == *"pip sync"* || "$SUBJECT" == *"pipsync"* ]]; then
+            echo "should_sync=true" >> "$GITHUB_OUTPUT"
+            echo "Jar sync to AutoPYaraPyPI requested."
+          else
+            echo "should_sync=false" >> "$GITHUB_OUTPUT"
           fi
 
   build:
@@ -72,8 +115,6 @@ jobs:
       - name: Build with Maven
         run: mvn -B package
 
-      # Hand the exact built jar to the release job, so what gets published is
-      # the artifact that was actually built here rather than a rebuild.
       - name: Upload jar as a workflow artifact
         uses: actions/upload-artifact@v4
         with:
@@ -85,37 +126,145 @@ jobs:
     needs: [gate, build]
     if: needs.gate.outputs.should_release == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Download the jar built by the build job
-        uses: actions/download-artifact@v4
         with:
-          name: autoyara-jar
-          path: dist
+          fetch-depth: 0 # need full history + tags to see what is already released
 
-      - name: Create the tag, release, and attach the jar
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Determine the version to release
+        id: version
+        env:
+          BUMP_TYPE: ${{ needs.gate.outputs.bump_type }}
+        run: |
+          CURRENT="$(python3 .github/scripts/bump_pom_version.py --current)"
+
+          # Publish the current pom version as-is if it has never been tagged
+          # (this is what makes a fresh 1.0.0 start work); otherwise bump first,
+          # so the same version is never released twice.
+          if git rev-parse "v${CURRENT}" >/dev/null 2>&1; then
+            NEW="$(python3 .github/scripts/bump_pom_version.py "$BUMP_TYPE")"
+            echo "v${CURRENT} already exists -> ${BUMP_TYPE} bump to ${NEW}"
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+          else
+            NEW="$CURRENT"
+            echo "v${CURRENT} not yet released -> publishing as-is"
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=${NEW}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit the version bump and tag the release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUMPED: ${{ steps.version.outputs.bumped }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [[ "$BUMPED" == "true" ]]; then
+            git add pom.xml
+            git commit -m "Release v${VERSION} [automated]"
+            git push origin HEAD:main
+          fi
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"
+
+      - name: Build the release jar
+        run: mvn -B package
+
+      - name: Publish the GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          TAG="$(date +'%Y%m%d%H%M%S')"
-          JAR="$(ls dist/AutoYara-*.jar | head -1)"
-          ASSET="dist/AutoYara-1.0-SNAPSHOT-${TAG}.jar"
-          [ "$JAR" = "$ASSET" ] || cp "$JAR" "$ASSET"
+          JAR="target/AutoYara-${VERSION}.jar"
+          ls -l "$JAR"
 
           # Built with printf so no YAML indentation leaks into the notes
           # (4+ leading spaces would render as a code block on GitHub).
           NOTES="$(printf '%s\n' \
-            "Automated build of \`${GITHUB_SHA}\` on \`${GITHUB_REF_NAME}\`." \
+            "Built from \`${GITHUB_SHA}\` with \`mvn -B package\` (Temurin JDK 17)." \
             "" \
-            "Built with \`mvn -B package\` (Temurin JDK 17)." \
-            "" \
-            "Consumed by the [autopyara](https://pypi.org/project/autopyara/) Python package as \`autopyara/jars/AutoYara.jar\`.")"
+            "Consumed by the [autopyara](https://pypi.org/project/autopyara/) Python package as \`autopyara/jars/AutoYara.jar\`." \
+            "Push a commit whose subject contains \`pip sync\` to propagate this jar there.")"
 
-          # gh creates the tag at the checked-out commit as part of this call.
-          # The commit SHA goes in the notes so a published jar can always be
-          # traced back to the source it was built from -- the pom version is
-          # a fixed 1.0-SNAPSHOT and cannot serve that purpose.
-          gh release create "$TAG" "$ASSET" \
-            --title "Release $TAG" \
+          gh release create "v${VERSION}" "$JAR" \
+            --title "v${VERSION}" \
             --notes "$NOTES"
+
+  sync:
+    needs: [gate, build, release]
+    # Runs when "pip sync" was requested, whether or not a release was also cut.
+    if: >-
+      always()
+      && needs.gate.outputs.should_sync == 'true'
+      && needs.build.result == 'success'
+      && (needs.release.result == 'success' || needs.release.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the cross-repository token is configured
+        env:
+          TARGET_REPO_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
+        run: |
+          if [ -z "$TARGET_REPO_TOKEN" ]; then
+            echo "::error::TARGET_REPO_TOKEN is not set. It must be a classic PAT"
+            echo "::error::with 'repo' scope, owned by an account holding the"
+            echo "::error::Repository admin role on AutoPYaraPyPI (its main branch"
+            echo "::error::ruleset requires a bypass-capable actor to push)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          # Track the branch, not the triggering SHA, so that when a release ran
+          # first we pick up its version-bump commit and sync the released jar.
+          ref: main
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Build the jar to sync
+        run: mvn -B package
+
+      - name: Push the jar into AutoPYaraPyPI
+        env:
+          TARGET_REPO_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
+        run: |
+          VERSION="$(python3 .github/scripts/bump_pom_version.py --current)"
+          JAR="target/AutoYara-${VERSION}.jar"
+          ls -l "$JAR"
+
+          git clone --depth 1 \
+            "https://x-access-token:${TARGET_REPO_TOKEN}@github.com/Botacin-s-Lab/AutoPYaraPyPI.git" \
+            target-repo
+
+          mkdir -p target-repo/autopyara/jars
+          cp "$JAR" target-repo/autopyara/jars/AutoYara.jar
+
+          cd target-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add autopyara/jars/AutoYara.jar
+
+          if git diff --cached --quiet; then
+            echo "Jar is byte-identical to the one already committed - nothing to sync."
+            exit 0
+          fi
+
+          # This subject deliberately contains neither "New version" nor
+          # "New subversion": landing it on AutoPYaraPyPI's main must NOT set off
+          # that repository's PyPI release pipeline. Only the jar is updated.
+          git commit -m "Sync AutoYara.jar from AutoPYaraBackend v${VERSION} (${GITHUB_SHA})"
+          git push
+          echo "Synced AutoYara.jar v${VERSION} to AutoPYaraPyPI."

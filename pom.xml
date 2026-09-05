@@ -3,7 +3,10 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>edu.lps.acs.ml</groupId>
     <artifactId>AutoYara</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <!-- Semantic version, bumped automatically by .github/workflows/build.yml:
+         "NewVersion" -> minor, "NewSubversion" -> patch. Hand-edit only for a
+         major bump. -->
+    <version>1.0.0</version>
     <packaging>jar</packaging>
     	<repositories>
 		<repository>
