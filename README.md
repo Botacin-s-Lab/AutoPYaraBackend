@@ -57,6 +57,30 @@ Third-party dependencies:
 
 > **Licensing note.** [`LICENSE`](LICENSE) (MIT © 2026 Botacin's Lab) covers the original contributions listed above. The 8 upstream-derived files remain under the **Apache License 2.0** — see [`NOTICE`](NOTICE) and [`LICENSE-Apache-2.0`](LICENSE-Apache-2.0). Every source file carries a header stating which of the two applies to it.
 
+## Citation
+
+If you use AutoPYara in academic work, please cite:
+
+> Mabon Ninan\*, Nhat Minh Nguyen\*, Soumyajyoti Dutta, Sidharth Anil, and Marcus Botacin.
+> **"AutoPYara: Next-Gen YARA Rule Generator for Malware Family Clustering."** *Annual Computer Security Applications Conference (ACSAC 2026)*, to appear.
+> \*Equal contribution. Texas A&M University — {ninanmm, nmnguy29, soumyajyoti1998, sid.anil, botacin}@tamu.edu
+
+```bibtex
+@inproceedings{autopyara2026,
+  title     = {AutoPYara: Next-Gen YARA Rule Generator for Malware Family Clustering},
+  author    = {Ninan, Mabon and Nguyen, Nhat Minh and Dutta, Soumyajyoti and Anil, Sidharth and Botacin, Marcus},
+  booktitle = {Proceedings of the Annual Computer Security Applications Conference (ACSAC)},
+  year      = {2026},
+  note      = {To appear}
+}
+```
+
+This backend was also the subject of a related thesis:
+
+> Nhat Minh Nguyen. **"AutoPYara: A Python/Java Framework for Automatic YARA Rule Generation Using Semi-Supervised Clustering."** M.S. Thesis, Texas A&M University, Spring 2025.
+
+Please also cite the original AutoYara paper (see [Provenance and credits](#provenance-and-credits) above).
+
 ## Repository layout
 
 ```
